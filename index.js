@@ -5,7 +5,7 @@ socket.onopen = () => {
     console.log("WebSocket verbunden");
 };
 
-// Nachricht vom Server (LoRa / Backend)
+// Nachricht vom Server (LoRa / Backend) 
 socket.onmessage = (event) => {
     addReceivedMessage("LoRa Gerät", event.data);
 };
