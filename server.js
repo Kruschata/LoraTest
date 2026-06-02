@@ -1,16 +1,41 @@
-const express = require("express");
+const WebSocket = require("ws");
+const { SerialPort } = require("serialport");
 
-const app = express();
+const wss = new WebSocket.Server({ port: 8080 });
 
-app.use(express.json());
-
-app.post("/webhook", (req, res) => {
-    console.log("Neue TTN Nachricht:");
-    console.log(JSON.stringify(req.body, null, 2));
-
-    res.status(200).send("OK");
+// LoRa Serial
+const port = new SerialPort({
+  path: "COM44",
+  baudRate: 115200
 });
 
-app.listen(8080, () => {
-    console.log("Server läuft auf Port 8080");
+let clients = [];
+
+// WebSocket Verbindung
+wss.on("connection", (ws) => {
+  console.log("Client verbunden");
+  clients.push(ws);
+
+  ws.on("message", (msg) => {
+    console.log("Von Website:", msg.toString());
+
+    port.write(msg.toString() + "\n");
+  });
+
+  ws.on("close", () => {
+    clients = clients.filter(c => c !== ws);
+  });
+});
+
+// 🔥 NUR EINMAL: LoRa → alle Clients
+port.on("data", (data) => {
+  const message = data.toString();
+
+  console.log("Von LoRa:", message);
+
+  clients.forEach(ws => {
+    if (ws.readyState === 1) {
+      ws.send(message);
+    }
+  });
 });
