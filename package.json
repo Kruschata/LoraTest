@@ -1,7 +1,0 @@
-{
-  "dependencies": {
-    "serialport": "^13.0.0",
-    "websocket-ts": "^2.3.0",
-    "ws": "^8.21.0"
-  }
-}
