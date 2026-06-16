@@ -1,15 +1,25 @@
-const WebSocket = require("ws");
+﻿const WebSocket = require("ws");
 const { SerialPort } = require("serialport");
 
 const wss = new WebSocket.Server({ port: 8080 });
 
 // LoRa Serial
 const port = new SerialPort({
-  path: "COM44",
-  baudRate: 115200
+  path: "COM44", // Ersetze dies durch den COM-Port deines ESP32
+  baudRate: 115200,
+  autoOpen: true
 });
 
+let serialBuffer = "";
 let clients = [];
+
+port.on("open", () => {
+  console.log("Serialport offen:", port.path);
+});
+
+port.on("error", (err) => {
+  console.error("Serialport Fehler:", err.message);
+});
 
 // WebSocket Verbindung
 wss.on("connection", (ws) => {
@@ -17,9 +27,12 @@ wss.on("connection", (ws) => {
   clients.push(ws);
 
   ws.on("message", (msg) => {
-    console.log("Von Website:", msg.toString());
+    const text = msg.toString().trim();
+    console.log("Von Website:", text);
 
-    port.write(msg.toString() + "\n");
+    if (text.length > 0) {
+      port.write(text + "\n");
+    }
   });
 
   ws.on("close", () => {
@@ -29,13 +42,23 @@ wss.on("connection", (ws) => {
 
 // 🔥 NUR EINMAL: LoRa → alle Clients
 port.on("data", (data) => {
-  const message = data.toString();
+  serialBuffer += data.toString();
+  let index;
 
-  console.log("Von LoRa:", message);
+  while ((index = serialBuffer.indexOf("\n")) !== -1) {
+    const line = serialBuffer.slice(0, index).trim();
+    serialBuffer = serialBuffer.slice(index + 1);
 
-  clients.forEach(ws => {
-    if (ws.readyState === 1) {
-      ws.send(message);
+    if (!line) {
+      continue;
     }
-  });
+
+    console.log("Von LoRa:", line);
+
+    clients.forEach(ws => {
+      if (ws.readyState === 1) {
+        ws.send(line);
+      }
+    });
+  }
 });
