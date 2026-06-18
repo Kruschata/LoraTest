@@ -5,7 +5,7 @@ const wss = new WebSocket.Server({ port: 8080 });
 
 // LoRa Serial
 const port = new SerialPort({
-  path: "COM44", // Ersetze dies durch den COM-Port deines ESP32
+  path: "COM7", // Ersetze dies durch den COM-Port deines ESP32
   baudRate: 115200,
   autoOpen: true
 });
