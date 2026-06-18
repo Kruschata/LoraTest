@@ -63,4 +63,6 @@ Wenn du möchtest, passe ich die Website so an, dass die Serveradresse konfiguri
 
 
 
-
+$env:SERIAL_PORT='COM11'      # anpassen
+$env:SERIAL_BAUD='115200'
+node server.js

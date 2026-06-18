@@ -1,12 +1,22 @@
-﻿const WebSocket = require("ws");
+﻿const express = require("express");
+const http = require("http");
+const WebSocket = require("ws");
 const { SerialPort } = require("serialport");
 
-const wss = new WebSocket.Server({ port: 8080 });
+const HTTP_PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 5500;
+const SERIAL_PATH = process.env.SERIAL_PORT || "COM11"; // Passe bei Bedarf an
+const SERIAL_BAUD = process.env.SERIAL_BAUD ? parseInt(process.env.SERIAL_BAUD, 10) : 115200;
+
+const app = express();
+app.use(express.static(require('path').join(__dirname, '..', 'website')));
+
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 
 // LoRa Serial
 const port = new SerialPort({
-  path: "COM7", // Ersetze dies durch den COM-Port deines ESP32
-  baudRate: 115200,
+  path: SERIAL_PATH,
+  baudRate: SERIAL_BAUD,
   autoOpen: true
 });
 
@@ -14,7 +24,7 @@ let serialBuffer = "";
 let clients = [];
 
 port.on("open", () => {
-  console.log("Serialport offen:", port.path);
+  console.log("Serialport offen:", port.path, "@", SERIAL_BAUD);
 });
 
 port.on("error", (err) => {
@@ -31,6 +41,7 @@ wss.on("connection", (ws) => {
     console.log("Von Website:", text);
 
     if (text.length > 0) {
+      // an das über USB angeschlossene Lilygo-Gerät senden
       port.write(text + "\n");
     }
   });
@@ -40,7 +51,7 @@ wss.on("connection", (ws) => {
   });
 });
 
-// 🔥 NUR EINMAL: LoRa → alle Clients
+// LoRa → alle WebSocket-Clients
 port.on("data", (data) => {
   serialBuffer += data.toString();
   let index;
@@ -49,16 +60,19 @@ port.on("data", (data) => {
     const line = serialBuffer.slice(0, index).trim();
     serialBuffer = serialBuffer.slice(index + 1);
 
-    if (!line) {
-      continue;
-    }
+    if (!line) continue;
 
     console.log("Von LoRa:", line);
 
     clients.forEach(ws => {
-      if (ws.readyState === 1) {
+      if (ws.readyState === WebSocket.OPEN) {
         ws.send(line);
       }
     });
   }
+});
+
+server.listen(HTTP_PORT, () => {
+  console.log(`HTTP & WebSocket Server läuft auf http://localhost:${HTTP_PORT}`);
+  console.log(`Benutze Serial Port: ${SERIAL_PATH} @ ${SERIAL_BAUD}`);
 });

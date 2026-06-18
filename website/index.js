@@ -1,4 +1,5 @@
-const socket = new WebSocket("ws://localhost:8080");
+const protocol = (location.protocol === 'https:') ? 'wss:' : 'ws:';
+const socket = new WebSocket(`${protocol}//${location.host}`);
 
 // Verbindung geöffnet
 socket.onopen = () => {
