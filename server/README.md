@@ -1,68 +1,63 @@
+# LoRa Chat Server
 
-# Server — Startanleitung & Code-Erklärung
+Der Server verbindet die Website mit einem LilyGO T-Beam. Die Website sendet per
+WebSocket an Node.js, Node.js sendet per Serial an den LilyGO, und der LilyGO
+sendet die Nachricht per LoRa an die anderen LilyGOs.
 
-## Kurzüberblick
-
-Der Node.js-Server verbindet einen seriellen LoRa-/ESP32-Port mit WebSocket-Clients (z. B. Browser). Seriell eingehende Textzeilen werden an alle verbundenen WebSocket-Clients weitergeleitet; Nachrichten von Clients werden an das serielle Gerät gesendet.
-
-## Voraussetzungen
-
-- Node.js (LTS empfohlen)
-- ESP32 / LoRa-Gerät per USB angeschlossen
-
-## Schnellstart (PowerShell)
+## Start
 
 ```powershell
-cd server
+cd C:\Users\Lukas\Desktop\LoraTest-1\server
 npm install
+$env:SERIAL_PORT='COM11'
+$env:SERIAL_BAUD='115200'
 npm start
 ```
 
-Wichtig: Prüfe vor dem Start in `server.js`, welcher COM-Port verwendet wird (Default: `COM44`). Falls nötig, passe die Datei an.
+Danach im Browser oeffnen:
 
+```text
+http://localhost:5500
+```
 
-## Server-Code (Kurz erklärt)
+## COM-Port finden
 
-**`package.json`**
-- Listet Abhängigkeiten (z. B. `serialport`, `ws`) und das `start`-Script (`node server.js`).
+Wenn du nicht weisst, welcher COM-Port der LilyGO ist:
 
-**`server.js` — Wichtige Bestandteile**
-- Importiert `ws` (WebSocket) und `serialport`.
-- Erstellt einen WebSocket-Server, der auf Port `8080` lauscht.
-- Öffnet eine serielle Verbindung zum ESP32/LoRa (Pfad & Baudrate konfigurierbar).
-- Empfängt serielle Daten, puffert sie zeilenweise (bis `\\n`) und sendet jede vollständige Zeile an alle verbundenen WebSocket-Clients.
-- Empfängt Nachrichten von WebSocket-Clients und leitet sie per `port.write(...)` an das serielle Gerät weiter.
-- Wichtige Events: `port.on('open')`, `port.on('error')`, `wss.on('connection')`, `port.on('data')`.
+```powershell
+cd C:\Users\Lukas\Desktop\LoraTest-1\server
+node -e "require('serialport').SerialPort.list().then(console.log)"
+```
 
-## ESP32 / LoRa — kurze Erklärung
+Bei Bluetooth wird der gekoppelte LilyGO ebenfalls als COM-Port angezeigt. Dann
+einfach diesen Port in `SERIAL_PORT` eintragen.
 
-- Das ESP32/LoRa-Gerät ist für die LoRa-Kommunikation zuständig und sendet/empfängt über USB serielle Texte (Zeilen mit `\\n`).
-- Auf dem ESP läuft ein Sketch/Firmware, die serielle Ausgaben formatiert und eingehende Befehle verarbeitet.
+## Mehrere PCs / mehrere LilyGOs
 
-## Website (Client) — kurze Erklärung
+Jeder PC startet seinen eigenen Server und verbindet sich mit seinem lokalen
+LilyGO. Die Browser/Server sprechen nicht miteinander. Die Kommunikation zwischen
+den Geraeten laeuft nur ueber LoRa.
 
-- Die Website verbindet sich per WebSocket zu `ws://<server-host>:8080`.
-- Nachrichten von der Website werden an das serielle Gerät gesendet; serielle Empfangszeilen werden an die Website weitergeleitet.
+Beispiel:
 
-## Fehler & Troubleshooting
+- PC A -> COM11 -> LilyGO 1
+- PC B -> COM7 -> LilyGO 2
+- Text von PC A geht ueber Serial zu LilyGO 1, dann per LoRa zu LilyGO 2, dann
+  ueber Serial zu PC B und erscheint dort im Chat.
 
-- Fehler: `Opening Com44: file not found`
-  - Mögliche Ursachen: Gerät nicht angeschlossen, falscher COM-Port oder fehlende Treiber.
-  - Prüfe Windows Device Manager → Ports (COM & LPT).
+## Nuetzliche Umgebungsvariablen
 
-## Logs / Verifikation
+| Variable | Standard | Bedeutung |
+| --- | --- | --- |
+| `PORT` | `5500` | HTTP/WebSocket-Port |
+| `SERIAL_PORT` | `COM11` | USB- oder Bluetooth-COM-Port |
+| `SERIAL_BAUD` | `115200` | Baudrate der Firmware |
 
-- Starte `npm start` und beobachte die Konsole. Erwartete Meldungen:
-  - `Serialport offen:` (seriell verbunden)
-  - `Client verbunden` (bei WebSocket-Verbindungen)
-  - `Von LoRa:` (empfangene Zeilen vom Gerät)
+## Troubleshooting
 
-## Weiteres
-
-Wenn du möchtest, passe ich die Website so an, dass die Serveradresse konfigurierbar ist, oder erweitere die Anzeige um den Verbindungsstatus der seriellen Schnittstelle.
-
-
-
-$env:SERIAL_PORT='COM11'      # anpassen
-$env:SERIAL_BAUD='115200'
-node server.js
+- `Serialport konnte nicht geoeffnet werden`: falscher COM-Port, Treiber fehlt,
+  Port ist bereits im seriellen Monitor offen, oder Bluetooth ist nicht verbunden.
+- Website zeigt `Serial ist nicht verbunden`: Server laeuft, aber der LilyGO-Port
+  konnte nicht geoeffnet werden.
+- Keine LoRa-Nachrichten: Frequenz, LoRa-Modulversion, Antenne und `DEVICE_ID`
+  pruefen. Beide Geraete muessen dieselben LoRa-Parameter haben.

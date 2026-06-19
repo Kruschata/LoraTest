@@ -1,42 +1,105 @@
-ESP (Lilygo TTGO LORA32) — Anleitung
+# ESP Firmware fuer LilyGO T-Beam SX1276
 
-Kurz: Dieses Projekt verwendet PlatformIO (VSCode) zum Kompilieren und Flashen.
+Diese Firmware macht aus dem LilyGO T-Beam einen einfachen LoRa-Chat-Knoten.
+Der PC spricht per USB-Serial oder Bluetooth-Serial mit dem LilyGO. Die LilyGOs
+sprechen untereinander ausschliesslich ueber LoRa-Funk.
+Zusaetzlich startet jeder LilyGO einen eigenen WLAN Access Point mit einer
+kleinen Chat-Website unter `http://192.168.4.1`.
 
-Voraussetzungen
-- PlatformIO (VSCode Extension) oder PlatformIO Core (CLI)
-- USB-Treiber für das ESP32-Board installiert
+## Hardware
 
-Wichtig
-- In `src/main.cpp` gibt es `#define DEVICE_ID 1`. Ändere diese ID für jedes Gerät (z. B. 1, 2, 3...).
+- LilyGO T-Beam mit ESP32, AXP2101 und SX1276/SX1278
+- Antenne muss vor dem Senden angeschlossen sein
+- Frequenz im Sketch passend zum Modul/Land setzen:
+  - `868E6` fuer die meisten EU-868-Module
+  - `915E6` fuer US-915-Module
+  - `433E6` fuer 433-MHz-Module
 
-Build & Upload (PlatformIO in VSCode)
-1. Öffne das Projekt-Ordner `esp` in VSCode.
-2. Öffne die PlatformIO-Leiste und wähle das Environment `esp32doit-devkit-v1`.
-3. Klicke auf `Build` und danach `Upload` (oder `Upload and Monitor`).
+Die verwendeten LoRa-Pins sind:
 
-Alternativ CLI:
-```bash
-# vom Ordner esp
-pio run -e esp32doit-devkit-v1 -t upload
-pio device monitor -b 115200
+| Signal | GPIO |
+| --- | ---: |
+| SCK | 5 |
+| MISO | 19 |
+| MOSI | 27 |
+| NSS/SS | 18 |
+| RST | 23 |
+| DIO0 | 26 |
+
+## Vor dem Flashen
+
+In `src/main.cpp` pro Geraet eindeutig setzen:
+
+```cpp
+static const uint8_t DEVICE_ID = 1;
+static const char *BT_NAME = "LoraChat-1";
+static const char *WIFI_AP_SSID = "LoraChat-1";
+static const char *WIFI_AP_PASSWORD = "12345678";
 ```
 
-Testen
-- Nach dem Upload öffne den Seriellen Monitor (`115200` Baud).
-- Verbinde den Lilygo per USB mit dem Server-PC (dieser PC hostet `server/server.js`).
-- Starte den Node-Server (siehe `server/README.md`) und öffne die Website.
-- Sende Texte über die Website — sie erscheinen im seriellen Monitor und werden per LoRa übertragen.
-- Andere LoRa-Geräte empfangen die Nachricht und antworten; die Antwort erscheint dann ebenfalls im Web-UI.
+Beispiel:
 
-OLED-Anzeige
-- Wenn dein Lilygo ein OLED (0.96" / 128x64, I2C 0x3C) hat, zeigt das Gerät jetzt gesendete und empfangene Nachrichten auf dem OLED an.
-- Beim Senden: auf dem Sender erscheint "Sende:" + Payload.
-- Beim Empfangen: auf dem Empfänger erscheint "Empfangen:" + Payload.
-- Länge wird für Anzeige gekürzt; vollständige Daten stehen im seriellen Monitor.
+- Geraet A: `DEVICE_ID = 1`, `BT_NAME = "LoraChat-1"`, `WIFI_AP_SSID = "LoraChat-1"`
+- Geraet B: `DEVICE_ID = 2`, `BT_NAME = "LoraChat-2"`, `WIFI_AP_SSID = "LoraChat-2"`
 
-Format (einfaches Protokoll)
-- Ausgehende Nachrichten vom Web-UI sollten optional ein Ziel angeben: `TO:<targetId>|Dein Text`.
-- Der Sketch hängt automatisch `FROM:<DEVICE_ID>|` an die LoRa-Payload an.
-- Wenn ein Gerät eine LoRa-Payload empfängt, leitet es diese unverändert per Serial an den Server weiter.
+Alle Geraete muessen dieselbe Frequenz und dieselben LoRa-Parameter verwenden.
 
-Wenn du möchtest, kann ich das Protokoll auf JSON umbauen, zusätzliche Felder (Zeitstempel, RSSI, etc.) hinzufügen oder eine einfache Adresse-/Routing-Logik implementieren.
+## Direkt per WLAN verbinden
+
+Nach dem Flashen startet der LilyGO ein WLAN:
+
+```text
+SSID: LoraChat-1 bzw. LoraChat-2
+Passwort: 12345678
+Adresse: http://192.168.4.1
+```
+
+So benutzt du es:
+
+1. Mit Handy, Tablet oder PC mit dem WLAN des LilyGO verbinden.
+2. Browser oeffnen und `http://192.168.4.1` aufrufen.
+3. Nachricht eingeben und senden.
+
+Diese Website laeuft direkt auf dem ESP32. Es ist kein Node-Server noetig.
+Empfangene LoRa-Nachrichten werden automatisch nachgeladen.
+
+## Build und Upload
+
+In VS Code mit PlatformIO:
+
+1. Ordner `esp` oeffnen.
+2. PlatformIO Environment `t-beam` auswaehlen.
+3. `Build` ausfuehren.
+4. `Upload` ausfuehren.
+
+Per CLI, falls `pio` installiert ist:
+
+```powershell
+cd C:\Users\Lukas\Desktop\LoraTest-1\esp
+pio run -e t-beam -t upload
+pio device monitor -e t-beam
+```
+
+Hinweis: Das Projekt nutzt `huge_app.csv`, damit LoRa, Bluetooth und WLAN-Webserver
+gemeinsam in den Flash passen. OTA-Updates sind damit nicht vorgesehen.
+
+## Serielles Protokoll
+
+Vom PC zum LilyGO:
+
+```text
+CHAT|Hallo Welt
+```
+
+Vom LilyGO zum PC:
+
+```text
+STATUS|OK|DEVICE|1|BT|LoraChat-1
+STATUS|OK|WIFI|LoraChat-1|IP|192.168.4.1
+TX|1|7|Hallo Welt
+RX|2|4|-72|8.25|Antwort vom zweiten LilyGO
+RAW|-80|7.50|Unbekannte Payload
+```
+
+`TX` bestaetigt, dass das lokale Geraet gesendet hat. `RX` ist eine ueber LoRa
+empfangene Chatnachricht von einem anderen Geraet.
