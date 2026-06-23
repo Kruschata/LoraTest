@@ -1,9 +1,12 @@
-#include <Arduino.h>
+﻿#include <Arduino.h>
 #include <SPI.h>
 #include <LoRa.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include "BluetoothSerial.h"
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
 // LILYGO T-Beam AXP2101 with SX1276/SX1278.
 // Use 868E6 in most of Europe, 915E6 in the US, 433E6 for 433 MHz modules.
@@ -15,6 +18,17 @@ static const int PIN_LORA_MOSI = 27;
 static const int PIN_LORA_SS = 18;
 static const int PIN_LORA_RST = 23;
 static const int PIN_LORA_DIO0 = 26;
+static const int PIN_DISPLAY_SCL = 22;
+static const int PIN_DISPLAY_SDA = 21;
+
+
+static const int SCREEN_WIDTH = 128;
+static const int SCREEN_HEIGHT = 64;
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+String lastDisplayMessage = "-";
+int lastRSSI = 0;
 
 // Change this before flashing each LilyGO: 1, 2, 3, ...
 static const uint8_t DEVICE_ID = 2;
@@ -83,6 +97,36 @@ const char INDEX_HTML[] PROGMEM = R"HTML(
 </body>
 </html>
 )HTML";
+
+void updateDisplay() {
+  display.clearDisplay();
+
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setCursor(0, 0);
+  display.print("Name:");
+  display.println("LoraChat-" + String(DEVICE_ID));
+
+  display.setCursor(0, 16);
+  display.print("RSSI: " );
+  display.print(lastRSSI);
+  display.println("dbm");
+
+
+  display.setCursor(0, 32);
+  display.println("Msg:");
+
+  String msg = lastDisplayMessage;
+  if (msg.length() > 40) {
+    msg = msg.substring(0, 40);
+  }
+
+  display.setCursor(0, 44);
+  display.println(msg);
+
+  display.display();
+}
 
 String escapeField(const String &value) {
   String out;
@@ -184,6 +228,9 @@ void sendChatMessage(String text) {
   LoRa.receive();
 
   emitChatLine("TX|" + String(DEVICE_ID) + "|" + String(messageCounter) + "|" + escapedText);
+
+  lastDisplayMessage = text;
+  updateDisplay();
 }
 
 void handleCommand(String line) {
@@ -238,6 +285,9 @@ void handleIncomingLoRa() {
   String from = payload.substring(p2 + 1, p3);
   String counter = payload.substring(p3 + 1, p4);
   String text = unescapeField(payload.substring(p4 + 1));
+  lastRSSI = LoRa.packetRssi();
+  lastDisplayMessage = text;
+  updateDisplay();
 
   if (from.toInt() == DEVICE_ID) {
     return;
@@ -298,6 +348,12 @@ void setupWebServer() {
 void setup() {
   Serial.begin(115200);
   delay(500);
+
+  Wire.begin(PIN_DISPLAY_SDA, PIN_DISPLAY_SCL);
+
+if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+  updateDisplay();
+}
 
   SerialBT.begin(BT_NAME);
 
