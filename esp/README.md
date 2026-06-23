@@ -44,6 +44,21 @@ Beispiel:
 
 Alle Geraete muessen dieselbe Frequenz und dieselben LoRa-Parameter verwenden.
 
+## LoRa-Konfiguration
+
+Die LoRa-Parameter sind in der `setup()`-Funktion konfiguriert:
+
+| Parameter | Wert | Erklärung |
+|-----------|------|-----------|
+| **Synchronisationswort** | `0x34` | Geheimschlüssel - nur Geräte mit gleichem Wort können sich verstehen |
+| **Spreizungsfaktor** | `7` | SF7 = schnelle Übertragung, kurze Reichweite; SF12 = langsam, große Reichweite |
+| **Bandbreite** | `125 kHz` | Standard; höhere Werte ermöglichen schnellere Übertragung |
+| **Fehlerkorrektur** | `4/5` | 80% Fehlertoleranz; höhere Werte = robuster aber langsamer |
+| **Sendeleistung** | `17 dBm` | ~50 mW; höher = größere Reichweite, aber mehr Stromverbrauch |
+| **CRC** | aktiviert | Fehlerprüfung: fehlerhafte Pakete werden verworfen |
+
+**Wichtig:** Alle Geräte im Netzwerk müssen die **gleichen Parameter** haben, sonst können sie nicht kommunizieren!
+
 ## Direkt per WLAN verbinden
 
 Nach dem Flashen startet der LilyGO ein WLAN:
@@ -83,22 +98,42 @@ pio device monitor -e t-beam
 Hinweis: Das Projekt nutzt `huge_app.csv`, damit LoRa, Bluetooth und WLAN-Webserver
 gemeinsam in den Flash passen. OTA-Updates sind damit nicht vorgesehen.
 
+## Programmlogik
+
+### `sendChatMessage(String text)`
+Sendet eine Chatnachricht über LoRa:
+- Trimmt und validiert den Text (max. 180 Zeichen)
+- Erhöht einen Message-Zähler
+- Escapiert Sonderzeichen (`\` und `|`)
+- Baut ein Payload-Format: `LCHAT|1|DEVICE_ID|counter|escapedText`
+- Sendet das Paket über LoRa
+- Gibt eine TX-Meldung aus und zeigt die Nachricht auf dem Display
+
+### `handleCommand(String line)`
+Verarbeitet eingehende Befehle:
+- Wenn die Zeile mit `CHAT|` beginnt → Text danach als Nachricht senden
+- Sonst → ganze Zeile als Nachricht senden
+
+### `readCommandStream(Stream &stream, String &buffer)`
+Liest Daten aus USB oder Bluetooth:
+- Liest Zeichen für Zeichen
+- Bei Zeilenumbruch (`\n`) → `handleCommand()` aufrufen
+- Ignoriert Carriage Returns (`\r`)
+- Maximale Buffer-Länge: 220 Zeichen
+
+### `handleIncomingLoRa()`
+Verarbeitet eingehende LoRa-Pakete:
+- Parst das Payload-Format: findet die Pipe-Trennzeichen (`|`)
+- Bei **ungültigem Format** → sendet RAW-Daten mit RSSI/SNR
+- Bei **gültigem Format** → extrahiert Sender-ID, Counter und Text
+- Ignoriert Nachrichten vom **eigenen Gerät**
+- Emittiert RX-Nachricht mit Sender-ID, Counter, RSSI, SNR und Text
+
 ## Serielles Protokoll
 
 Vom PC zum LilyGO:
 
-```text
-CHAT|Hallo Welt
-```
 
-Vom LilyGO zum PC:
-
-```text
-STATUS|OK|DEVICE|1|BT|LoraChat-1
-STATUS|OK|WIFI|LoraChat-1|IP|192.168.4.1
-TX|1|7|Hallo Welt
-RX|2|4|-72|8.25|Antwort vom zweiten LilyGO
-RAW|-80|7.50|Unbekannte Payload
 ```
 
 `TX` bestaetigt, dass das lokale Geraet gesendet hat. `RX` ist eine ueber LoRa

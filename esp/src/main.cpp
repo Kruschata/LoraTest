@@ -7,9 +7,15 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include "index.h"
+
+// Change this before flashing each LilyGO: 1, 2, 3, ...
+static const uint8_t DEVICE_ID = 4;
+static const char *BT_NAME = "LoraChat-4";
+static const char *WIFI_AP_SSID = "LoraChat-4";
+static const char *WIFI_AP_PASSWORD = "12345678";
 
 // LILYGO T-Beam AXP2101 with SX1276/SX1278.
-// Use 868E6 in most of Europe, 915E6 in the US, 433E6 for 433 MHz modules.
 static const long LORA_FREQUENCY = 868E6;
 
 static const int PIN_LORA_SCK = 5;
@@ -18,23 +24,15 @@ static const int PIN_LORA_MOSI = 27;
 static const int PIN_LORA_SS = 18;
 static const int PIN_LORA_RST = 23;
 static const int PIN_LORA_DIO0 = 26;
+
 static const int PIN_DISPLAY_SCL = 22;
 static const int PIN_DISPLAY_SDA = 21;
-
-
 static const int SCREEN_WIDTH = 128;
 static const int SCREEN_HEIGHT = 64;
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-
 String lastDisplayMessage = "-";
 int lastRSSI = 0;
-
-// Change this before flashing each LilyGO: 1, 2, 3, ...
-static const uint8_t DEVICE_ID = 2;
-static const char *BT_NAME = "LoraChat-2";
-static const char *WIFI_AP_SSID = "LoraChat-2";
-static const char *WIFI_AP_PASSWORD = "12345678";
 
 BluetoothSerial SerialBT;
 WebServer webServer(80);
@@ -48,55 +46,9 @@ String messageLog[MESSAGE_LOG_SIZE];
 uint8_t messageLogStart = 0;
 uint8_t messageLogCount = 0;
 
-const char INDEX_HTML[] PROGMEM = R"HTML(
-<!doctype html>
-<html lang="de">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LoRa Chat</title>
-  <style>
-    :root{--bg:#eef2f5;--panel:#fff;--line:#d7dee5;--text:#17212b;--muted:#657282;--out:#d8ecff;--in:#f4f7f9;--accent:#1769aa}
-    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text)}
-    main{min-height:100vh;display:grid;place-items:center;padding:14px}.panel{width:min(760px,100%);height:min(760px,calc(100vh - 28px));display:grid;grid-template-rows:auto 1fr auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
-    header{padding:16px;border-bottom:1px solid var(--line)}h1{font-size:1.25rem;margin:0}p{margin:4px 0 0;color:var(--muted)}
-    #messages{padding:14px;overflow:auto;background:#fbfcfd}.msg{max-width:86%;margin:0 0 10px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--in);overflow-wrap:anywhere;white-space:pre-wrap}.tx{margin-left:auto;background:var(--out);border-color:#b9d8f2}.meta{display:block;margin-bottom:4px;color:var(--muted);font-size:.78rem}
-    form{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px;border-top:1px solid var(--line)}input,button{font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line)}button{min-width:92px;border-color:var(--accent);background:var(--accent);color:white}
-    @media(max-width:560px){main{padding:0}.panel{height:100vh;border:0;border-radius:0}form{grid-template-columns:1fr}button{width:100%}}
-  </style>
-</head>
-<body>
-  <main>
-    <section class="panel">
-      <header><h1>LoRa Chat</h1><p>Verbunden mit 192.168.4.1</p></header>
-      <div id="messages"></div>
-      <form id="form"><input id="text" maxlength="180" placeholder="Nachricht eingeben..." autocomplete="off"><button>Senden</button></form>
-    </section>
-  </main>
-  <script>
-    const box=document.getElementById('messages'),form=document.getElementById('form'),input=document.getElementById('text');
-    let last='';
-    function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-    async function load(){
-      const text=await fetch('/api/messages',{cache:'no-store'}).then(r=>r.text()).catch(()=>null);
-      if(text===null||text===last)return; last=text;
-      box.innerHTML=text.split('\n').filter(Boolean).map(line=>{
-        const tx=line.startsWith('TX|'), parts=line.split('|'), msg=parts.slice(tx?3:5).join('|');
-        const meta=tx?`Gesendet von LilyGO ${parts[1]}, Paket ${parts[2]}`:`LilyGO ${parts[1]}, RSSI ${parts[3]}, SNR ${parts[4]}`;
-        return `<div class="msg ${tx?'tx':'rx'}"><span class="meta">${esc(meta)}</span>${esc(msg)}</div>`;
-      }).join('') || '<p>Noch keine Nachrichten.</p>';
-      box.scrollTop=box.scrollHeight;
-    }
-    form.addEventListener('submit',async e=>{
-      e.preventDefault(); const text=input.value.trim(); if(!text)return;
-      input.value=''; await fetch('/api/send',{method:'POST',headers:{'Content-Type':'text/plain'},body:text}).catch(()=>{});
-      load();
-    });
-    load(); setInterval(load,1000);
-  </script>
-</body>
-</html>
-)HTML";
+// ============================================================
+// DISPLAY - Funktionen für das OLED-Display
+// ============================================================
 
 void updateDisplay() {
   display.clearDisplay();
@@ -113,7 +65,6 @@ void updateDisplay() {
   display.print(lastRSSI);
   display.println("dbm");
 
-
   display.setCursor(0, 32);
   display.println("Msg:");
 
@@ -127,6 +78,10 @@ void updateDisplay() {
 
   display.display();
 }
+
+// ============================================================
+// UTILITY - Hilfsfunktionen für Escaping und String-Verarbeitung
+// ============================================================
 
 String escapeField(const String &value) {
   String out;
@@ -182,6 +137,11 @@ int findUnescapedPipe(const String &value, int startAt) {
   return -1;
 }
 
+// ============================================================
+// MESSAGE LOG - Verwaltung des Message-Buffers und Ausgabe
+// ============================================================
+
+//Ringpuffer für die letzten 20 Nachrichten
 void addMessageLog(const String &line) {
   uint8_t index;
   if (messageLogCount < MESSAGE_LOG_SIZE) {
@@ -195,6 +155,7 @@ void addMessageLog(const String &line) {
   messageLog[index] = line;
 }
 
+// Ausgabe einer Zeile auf USB und Bluetooth
 void emitLine(const String &line) {
   Serial.println(line);
   if (SerialBT.hasClient()) {
@@ -202,10 +163,15 @@ void emitLine(const String &line) {
   }
 }
 
+// Ausgabe einer Zeile auf USB, Bluetooth und in den Message-Log
 void emitChatLine(const String &line) {
   addMessageLog(line);
   emitLine(line);
 }
+
+// ============================================================
+// LORA - LoRa Kommunikation und Chat-Funktionen
+// ============================================================
 
 void sendChatMessage(String text) {
   text.trim();
@@ -299,6 +265,10 @@ void handleIncomingLoRa() {
   );
 }
 
+// ============================================================
+// WEBSERVER - HTTP API für die Web-Schnittstelle
+// ============================================================
+
 void handleWebRoot() {
   webServer.send_P(200, "text/html; charset=utf-8", INDEX_HTML);
 }
@@ -345,10 +315,13 @@ void setupWebServer() {
   emitLine("STATUS|OK|WIFI|" + String(WIFI_AP_SSID) + "|IP|192.168.4.1");
 }
 
+// ============================================================
+// SETUP & LOOP - Initialisierung und Hauptschleife
+// ============================================================
+
 void setup() {
   Serial.begin(115200);
   delay(500);
-
   Wire.begin(PIN_DISPLAY_SDA, PIN_DISPLAY_SCL);
 
 if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
