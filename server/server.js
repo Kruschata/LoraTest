@@ -1,6 +1,5 @@
 const express = require("express");
 const http = require("http");
-const path = require("path");
 const WebSocket = require("ws");
 const { SerialPort } = require("serialport");
 
@@ -9,7 +8,6 @@ const SERIAL_PATH = process.env.SERIAL_PORT || "COM11";
 const SERIAL_BAUD = process.env.SERIAL_BAUD ? parseInt(process.env.SERIAL_BAUD, 10) : 115200;
 
 const app = express();
-app.use(express.static(path.join(__dirname, "..", "website")));
 
 app.get("/api/serial-ports", async (_req, res) => {
   try {
@@ -163,7 +161,8 @@ wss.on("connection", (ws) => {
       event = { type: "chat", text: message.toString() };
     }
 
-    const text = String(event.text || "").trim();
+    // Accept both the original serial/web client field and the Flutter field.
+    const text = String(event.text || event.content || "").trim();
     if (!text) {
       return;
     }

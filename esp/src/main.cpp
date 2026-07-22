@@ -1,19 +1,17 @@
 ﻿#include <Arduino.h>
 #include <SPI.h>
 #include <LoRa.h>
-#include <WiFi.h>
-#include <WebServer.h>
-#include "BluetoothSerial.h"
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include "index.h"
+#include "BluetoothSerial.h"
+
+BluetoothSerial SerialBT;
 
 // Change this before flashing each LilyGO: 1, 2, 3, ...
-static const uint8_t DEVICE_ID = 4;
-static const char *BT_NAME = "LoraChat-4";
-static const char *WIFI_AP_SSID = "LoraChat-4";
-static const char *WIFI_AP_PASSWORD = "12345678";
+static const uint8_t DEVICE_ID = 2;
+// Give every node a unique name (and DEVICE_ID) before flashing it.
+static const char *BT_NAME = "LoRaChat-2";
 
 // LILYGO T-Beam AXP2101 with SX1276/SX1278.
 static const long LORA_FREQUENCY = 868E6;
@@ -33,9 +31,6 @@ static const int SCREEN_HEIGHT = 64;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 String lastDisplayMessage = "-";
 int lastRSSI = 0;
-
-BluetoothSerial SerialBT;
-WebServer webServer(80);
 
 uint32_t messageCounter = 0;
 String usbLine;
@@ -266,70 +261,33 @@ void handleIncomingLoRa() {
 }
 
 // ============================================================
-// WEBSERVER - HTTP API für die Web-Schnittstelle
-// ============================================================
-
-void handleWebRoot() {
-  webServer.send_P(200, "text/html; charset=utf-8", INDEX_HTML);
-}
-
-void handleWebMessages() {
-  String response;
-  for (uint8_t i = 0; i < messageLogCount; i++) {
-    uint8_t index = (messageLogStart + i) % MESSAGE_LOG_SIZE;
-    response += messageLog[index];
-    response += '\n';
-  }
-  webServer.send(200, "text/plain; charset=utf-8", response);
-}
-
-void handleWebSend() {
-  String text = webServer.arg("plain");
-  if (text.length() == 0 && webServer.hasArg("text")) {
-    text = webServer.arg("text");
-  }
-
-  text.trim();
-  if (text.length() == 0) {
-    webServer.send(400, "text/plain; charset=utf-8", "empty message");
-    return;
-  }
-
-  sendChatMessage(text);
-  webServer.send(200, "text/plain; charset=utf-8", "ok");
-}
-
-void setupWebServer() {
-  WiFi.mode(WIFI_AP);
-  WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-  WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD);
-
-  webServer.on("/", HTTP_GET, handleWebRoot);
-  webServer.on("/api/messages", HTTP_GET, handleWebMessages);
-  webServer.on("/api/send", HTTP_POST, handleWebSend);
-  webServer.onNotFound([]() {
-    webServer.send(404, "text/plain; charset=utf-8", "not found");
-  });
-  webServer.begin();
-
-  emitLine("STATUS|OK|WIFI|" + String(WIFI_AP_SSID) + "|IP|192.168.4.1");
-}
-
-// ============================================================
 // SETUP & LOOP - Initialisierung und Hauptschleife
 // ============================================================
 
 void setup() {
   Serial.begin(115200);
   delay(500);
+
+  // Display
   Wire.begin(PIN_DISPLAY_SDA, PIN_DISPLAY_SCL);
+  if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    updateDisplay();
+  }
 
-if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-  updateDisplay();
-}
+  // Bluetooth Classic / SPP. A fixed PIN makes pairing with Android reliable.
+  if (!SerialBT.begin(BT_NAME)) {
+    emitLine("STATUS|ERROR|Bluetooth init failed");
+  } else {
+    SerialBT.setPin("1234");
+    SerialBT.onAuthComplete([](boolean success) {
+      emitLine(success
+        ? "STATUS|OK|Bluetooth pairing successful"
+        : "STATUS|ERROR|Bluetooth pairing failed");
+    });
+    emitLine("STATUS|OK|Bluetooth|" + String(BT_NAME) + "|PIN|1234");
+  }
 
-  SerialBT.begin(BT_NAME);
-
+  // LoRa
   SPI.begin(PIN_LORA_SCK, PIN_LORA_MISO, PIN_LORA_MOSI, PIN_LORA_SS);
   LoRa.setPins(PIN_LORA_SS, PIN_LORA_RST, PIN_LORA_DIO0);
 
@@ -348,13 +306,10 @@ if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
   LoRa.enableCrc();
   LoRa.receive();
 
-  setupWebServer();
-
-  emitLine("STATUS|OK|DEVICE|" + String(DEVICE_ID) + "|BT|" + String(BT_NAME));
+  emitLine("STATUS|OK|Device " + String(DEVICE_ID) + " ready");
 }
 
 void loop() {
-  webServer.handleClient();
   readCommandStream(Serial, usbLine);
   readCommandStream(SerialBT, btLine);
   handleIncomingLoRa();
