@@ -9,9 +9,9 @@
 BluetoothSerial SerialBT;
 
 // Change this before flashing each LilyGO: 1, 2, 3, ...
-static const uint8_t DEVICE_ID = 2;
+static const uint8_t DEVICE_ID = 1;
 // Give every node a unique name (and DEVICE_ID) before flashing it.
-static const char *BT_NAME = "LoRaChat-2";
+static const char *BT_NAME = "LoRaChat-1";
 
 // LILYGO T-Beam AXP2101 with SX1276/SX1278.
 static const long LORA_FREQUENCY = 868E6;
