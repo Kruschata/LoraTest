@@ -4,6 +4,9 @@ Firmware für einen LilyGO T-Beam mit ESP32 und SX1276/SX1278. Das Handy
 verbindet sich per Bluetooth Classic (SPP) mit einem Knoten; die Knoten
 kommunizieren untereinander über LoRa.
 
+Die Firmware enthält keinen WLAN-, HTTP- oder WebSocket-Modus. Der einzige
+Funkpfad zwischen Knoten ist LoRa.
+
 ## Vor dem Flashen
 
 In `src/main.cpp` jedem Knoten eine eindeutige ID und einen eindeutigen

@@ -55,25 +55,24 @@ class _BluetoothConnectionScreenState extends State<BluetoothConnectionScreen> {
 
     try {
       final success = await _bluetoothService.connect(device);
-      
+
+      if (!mounted) return;
+
       if (success) {
-        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Connected to ${device.name}')),
         );
 
         // Navigate to chat screen with Bluetooth connection
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => BluetoothChatScreen(
-                bluetoothService: _bluetoothService,
-                deviceName: device.name ?? 'Unknown Device',
-              ),
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BluetoothChatScreen(
+              bluetoothService: _bluetoothService,
+              deviceName: device.name ?? 'Unknown Device',
             ),
-          );
-        }
+          ),
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
