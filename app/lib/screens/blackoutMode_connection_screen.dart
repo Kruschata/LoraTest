@@ -175,10 +175,37 @@ class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
   final NodeRegistryService _nodeRegistry = NodeRegistryService();
   StreamSubscription<String>? _dataSubscription;
 
+  List<_BluetoothStatusLine> get unreadStatusMessages =>
+      _statusMessages.where((message) => !message.isRead).toList();
+
+  List<_BluetoothStatusLine> get allStatusMessages => _statusMessages;
+
   @override
   void initState() {
     super.initState();
     _setupDataListener();
+  }
+
+  void _upsertStatusMessage(_BluetoothStatusLine statusLine) {
+    final index = _statusMessages.indexWhere(
+      (existing) => existing.category == statusLine.category,
+    );
+
+    if (index >= 0) {
+      _statusMessages[index] = statusLine;
+      return;
+    }
+
+    _statusMessages.insert(0, statusLine);
+  }
+
+  void _markStatusMessagesRead() {
+    if (!mounted) return;
+    setState(() {
+      for (final message in _statusMessages) {
+        message.isRead = true;
+      }
+    });
   }
 
   void _setupDataListener() {
@@ -190,7 +217,7 @@ class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
         final statusLine = _BluetoothStatusLine.parse(data);
         if (statusLine != null) {
           setState(() {
-            _statusMessages.insert(0, statusLine);
+            _upsertStatusMessage(statusLine);
           });
         }
 
@@ -237,23 +264,55 @@ class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final statusCount = allStatusMessages.length;
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Bluetooth: ${widget.deviceName}'),
-        backgroundColor: Colors.deepOrange,
+        backgroundColor: Colors.deepPurple.shade700,
+        foregroundColor: Colors.white,
         actions: [
-          IconButton(
-            tooltip: 'Status messages',
-            icon: const Icon(Icons.info_outline),
-            onPressed: () {
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                builder: (context) => _StatusMessagesSheet(
-                  messages: _statusMessages,
+          Stack(
+            alignment: Alignment.center,
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                tooltip: 'Status messages',
+                icon: const Icon(Icons.info_outline),
+                onPressed: () {
+                  _markStatusMessagesRead();
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    builder: (context) => _StatusMessagesSheet(
+                      messages: allStatusMessages,
+                    ),
+                  );
+                },
+              ),
+              if (statusCount > 0)
+                Positioned(
+                  right: -3,
+                  top: -2,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    decoration: const BoxDecoration(
+                      color: Colors.orange,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      statusCount.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ),
-              );
-            },
+            ],
           ),
           IconButton(
             tooltip: 'Device list',
@@ -352,8 +411,9 @@ class _BluetoothStatusLine {
   final String category;
   final String message;
   final DateTime timestamp;
+  bool isRead;
 
-  const _BluetoothStatusLine(this.category, this.message, this.timestamp);
+  _BluetoothStatusLine(this.category, this.message, this.timestamp, {this.isRead = false});
 
   static _BluetoothStatusLine? parse(String line) {
     final parts = line.split('|');
