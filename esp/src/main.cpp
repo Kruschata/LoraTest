@@ -4,12 +4,13 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <TinyGPSPlus.h>
 #include "BluetoothSerial.h"
 
 BluetoothSerial SerialBT;
 
 // Change this before flashing each LilyGO: 1, 2, 3, ...
-static const uint8_t DEVICE_ID = 1;
+static const uint8_t DEVICE_ID =1;
 // Give every node a unique name (and DEVICE_ID) before flashing it.
 static const char *BT_NAME = "LoRaChat-1";
 
@@ -41,6 +42,24 @@ String messageLog[MESSAGE_LOG_SIZE];
 uint8_t messageLogStart = 0;
 uint8_t messageLogCount = 0;
 
+TinyGPSPlus gps;
+HardwareSerial GPSSerial(1);
+
+// T-Beam GPS defaults (NEO-6M). Adjust if your hardware revision differs.
+static const int PIN_GPS_RX = 34;
+static const int PIN_GPS_TX = 12;
+// Many T-Beam revisions require an explicit GPS power enable on GPIO4.
+static const int PIN_GPS_POWER = 4;
+static const uint32_t GPS_BAUD_RATE = 9600;
+static const uint32_t LOC_SEND_INTERVAL_MS = 15000;
+static const uint32_t GPS_STATUS_INTERVAL_MS = 30000;
+
+uint32_t locationCounter = 0;
+unsigned long lastLocSendMs = 0;
+unsigned long lastGpsStatusMs = 0;
+uint32_t gpsCharsAtLastStatus = 0;
+bool gpsPowerEnabled = false;
+
 // ============================================================
 // DISPLAY - Funktionen für das OLED-Display
 // ============================================================
@@ -70,8 +89,18 @@ void updateDisplay() {
 
   display.setCursor(0, 44);
   display.println(msg);
+}
 
-  display.display();
+bool initDisplay() {
+  if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    return true;
+  }
+
+  if (display.begin(SSD1306_SWITCHCAPVCC, 0x3D)) {
+    return true;
+  }
+
+  return false;
 }
 
 // ============================================================
@@ -164,6 +193,147 @@ void emitChatLine(const String &line) {
   emitLine(line);
 }
 
+bool axpReadRegister(uint8_t reg, uint8_t &value) {
+  Wire.beginTransmission(0x34);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) {
+    return false;
+  }
+
+  if (Wire.requestFrom((uint8_t)0x34, (uint8_t)1) != 1) {
+    return false;
+  }
+
+  value = Wire.read();
+  return true;
+}
+
+bool axpWriteRegister(uint8_t reg, uint8_t value) {
+  Wire.beginTransmission(0x34);
+  Wire.write(reg);
+  Wire.write(value);
+  return Wire.endTransmission() == 0;
+}
+
+bool tryEnableGpsPowerViaAxp192() {
+  uint8_t powerReg = 0;
+  if (!axpReadRegister(0x12, powerReg)) {
+    return false;
+  }
+
+  // AXP192 register 0x12: enable LDO2/LDO3 rails commonly used for GPS power.
+  const uint8_t newValue = powerReg | 0x0C;
+  if (!axpWriteRegister(0x12, newValue)) {
+    return false;
+  }
+
+  uint8_t verify = 0;
+  if (!axpReadRegister(0x12, verify)) {
+    return false;
+  }
+
+  return (verify & 0x0C) == 0x0C;
+}
+
+void enableGpsPower() {
+  pinMode(PIN_GPS_POWER, OUTPUT);
+  digitalWrite(PIN_GPS_POWER, HIGH);
+
+  gpsPowerEnabled = true;
+  emitLine("STATUS|INFO|GPS power enabled via GPIO only");
+}
+
+String gpsTimestampIsoUtc() {
+  if (!gps.date.isValid() || !gps.time.isValid()) {
+    return "";
+  }
+
+  char buffer[25];
+  snprintf(
+    buffer,
+    sizeof(buffer),
+    "%04d-%02d-%02dT%02d:%02d:%02dZ",
+    gps.date.year(),
+    gps.date.month(),
+    gps.date.day(),
+    gps.time.hour(),
+    gps.time.minute(),
+    gps.time.second()
+  );
+
+  return String(buffer);
+}
+
+void emitLocLine(
+  const String &nodeId,
+  double lat,
+  double lon,
+  double accuracyMeters,
+  const String &timestampUtc
+) {
+  String line = "LOC|" + nodeId + "|" + String(lat, 6) + "|" + String(lon, 6) + "|" + String(accuracyMeters, 1);
+  if (timestampUtc.length() > 0) {
+    line += "|" + timestampUtc;
+  }
+  emitLine(line);
+}
+
+void sendLocationBroadcast() {
+  if (!gps.location.isValid()) {
+    return;
+  }
+
+  locationCounter++;
+  const double lat = gps.location.lat();
+  const double lon = gps.location.lng();
+  const double hdopMeters = gps.hdop.isValid() ? gps.hdop.hdop() * 5.0 : 999.0;
+  const String timestampUtc = gpsTimestampIsoUtc();
+
+  String payload =
+    "LLOC|1|" + String(DEVICE_ID) + "|" + String(locationCounter) + "|" +
+    String(lat, 6) + "|" + String(lon, 6) + "|" + String(hdopMeters, 1);
+
+  if (timestampUtc.length() > 0) {
+    payload += "|" + timestampUtc;
+  }
+
+  LoRa.idle();
+  LoRa.beginPacket();
+  LoRa.print(payload);
+  LoRa.endPacket();
+  LoRa.receive();
+
+  // Also emit local node location immediately to USB/Bluetooth app clients.
+  emitLocLine(String(DEVICE_ID), lat, lon, hdopMeters, timestampUtc);
+}
+
+void emitGpsStatus() {
+  const uint32_t charsNow = gps.charsProcessed();
+  const uint32_t charsDelta = charsNow - gpsCharsAtLastStatus;
+  gpsCharsAtLastStatus = charsNow;
+
+  if (charsNow < 10) {
+    emitLine("STATUS|GPS|NO_DATA|check_power_or_pins");
+    return;
+  }
+
+  if (!gps.location.isValid()) {
+    emitLine(
+      "STATUS|GPS|NO_FIX|chars_delta|" + String(charsDelta) +
+      "|sats|" + (gps.satellites.isValid() ? String(gps.satellites.value()) : String("?")) +
+      "|hdop|" + (gps.hdop.isValid() ? String(gps.hdop.hdop(), 1) : String("?"))
+    );
+    return;
+  }
+
+  emitLine(
+    "STATUS|GPS|FIX|lat|" + String(gps.location.lat(), 6) +
+    "|lon|" + String(gps.location.lng(), 6) +
+    "|sats|" + (gps.satellites.isValid() ? String(gps.satellites.value()) : String("?")) +
+    "|hdop|" + (gps.hdop.isValid() ? String(gps.hdop.hdop(), 1) : String("?"))
+  );
+}
+
 // ============================================================
 // LORA - LoRa Kommunikation und Chat-Funktionen
 // ============================================================
@@ -200,6 +370,17 @@ void handleCommand(String line) {
     return;
   }
 
+  if (line == "GPS|STATUS") {
+    emitGpsStatus();
+    return;
+  }
+
+  if (line == "GPS|POWERON") {
+    enableGpsPower();
+    emitLine("STATUS|GPS|POWER|ON");
+    return;
+  }
+
   if (line.startsWith("CHAT|")) {
     sendChatMessage(line.substring(5));
   } else {
@@ -232,6 +413,42 @@ void handleIncomingLoRa() {
     payload += (char)LoRa.read();
   }
   payload.trim();
+
+  if (payload.startsWith("LLOC|")) {
+    int p1 = payload.indexOf('|');
+    int p2 = payload.indexOf('|', p1 + 1);
+    int p3 = payload.indexOf('|', p2 + 1);
+    int p4 = payload.indexOf('|', p3 + 1);
+    int p5 = payload.indexOf('|', p4 + 1);
+    int p6 = payload.indexOf('|', p5 + 1);
+
+    if (p1 < 0 || p2 < 0 || p3 < 0 || p4 < 0 || p5 < 0 || p6 < 0) {
+      emitLine("RAW|" + String(LoRa.packetRssi()) + "|" + String(LoRa.packetSnr()) + "|" + escapeField(payload));
+      return;
+    }
+
+    int p7 = payload.indexOf('|', p6 + 1);
+
+    String from = payload.substring(p2 + 1, p3);
+    if (from.toInt() == DEVICE_ID) {
+      return;
+    }
+
+    String latField = payload.substring(p4 + 1, p5);
+    String lonField = payload.substring(p5 + 1, p6);
+    String accField;
+    String tsField;
+
+    if (p7 < 0) {
+      accField = payload.substring(p6 + 1);
+    } else {
+      accField = payload.substring(p6 + 1, p7);
+      tsField = payload.substring(p7 + 1);
+    }
+
+    emitLocLine(from, latField.toDouble(), lonField.toDouble(), accField.toDouble(), tsField);
+    return;
+  }
 
   int p1 = payload.indexOf('|');
   int p2 = payload.indexOf('|', p1 + 1);
@@ -268,10 +485,20 @@ void setup() {
   Serial.begin(115200);
   delay(500);
 
-  // Display
+  // Init I2C early: needed for OLED and possible AXP power management.
   Wire.begin(PIN_DISPLAY_SDA, PIN_DISPLAY_SCL);
-  if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+
+  enableGpsPower();
+  delay(100);
+
+  GPSSerial.begin(GPS_BAUD_RATE, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
+  emitLine("STATUS|INFO|GPS serial initialized");
+
+  // Display
+  if (initDisplay()) {
     updateDisplay();
+  } else {
+    emitLine("STATUS|ERROR|OLED init failed");
   }
 
   // Bluetooth Classic / SPP. A fixed PIN makes pairing with Android reliable.
@@ -310,6 +537,20 @@ void setup() {
 }
 
 void loop() {
+  while (GPSSerial.available()) {
+    gps.encode((char)GPSSerial.read());
+  }
+
+  if (millis() - lastGpsStatusMs >= GPS_STATUS_INTERVAL_MS) {
+    lastGpsStatusMs = millis();
+    emitGpsStatus();
+  }
+
+  if (millis() - lastLocSendMs >= LOC_SEND_INTERVAL_MS) {
+    lastLocSendMs = millis();
+    sendLocationBroadcast();
+  }
+
   readCommandStream(Serial, usbLine);
   readCommandStream(SerialBT, btLine);
   handleIncomingLoRa();

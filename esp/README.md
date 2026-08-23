@@ -23,6 +23,42 @@ verwenden. `868E6` ist passend für EU-868, `915E6` für US-915 und `433E6` für
 
 Die verwendeten Pins sind SCK 5, MISO 19, MOSI 27, NSS 18, RST 23 und DIO0 26.
 
+## GPS fuer Kartenposition
+
+Fuer die Kartenposition sendet die Firmware `LOC`-Zeilen an die App. Auf vielen
+T-Beam-Boards muss das GPS-Modul aktiv eingeschaltet werden. Die Firmware setzt
+deshalb beim Start den GPS-Power-Pin auf HIGH.
+
+Aktueller GPS-UART in `src/main.cpp`:
+
+- RX: GPIO 34
+- TX: GPIO 12
+- Baud: 9600
+
+Falls dein Board eine andere GPS-Verdrahtung hat, muessen diese Pins angepasst
+werden.
+
+### Diagnostik
+
+Im Monitor erscheinen regelmaessig Statuszeilen:
+
+- `STATUS|GPS|NO_DATA|check_power_or_pins`
+- `STATUS|GPS|NO_FIX|...`
+- `STATUS|GPS|FIX|lat|...|lon|...`
+
+Nur bei `FIX` werden nutzbare Positionen gesendet. Ohne Fix bleibt die
+Kartenansicht in der App leer.
+
+Du kannst die GPS-Diagnose aktiv triggern (USB oder Bluetooth):
+
+- `GPS|STATUS` -> sofortige GPS-Statuszeile
+- `GPS|POWERON` -> GPS-Power erneut aktivieren
+
+Die LOC-Zeit nutzt UTC im ISO-Format:
+
+- `YYYY-MM-DDTHH:MM:SSZ`
+- Beispiel: `2026-07-30T14:23:05Z`
+
 ## Build und Upload
 
 ```powershell
@@ -40,3 +76,7 @@ Die App sendet eine Zeile `CHAT|Text`. Der ESP bestätigt lokal mit
 `TX|id|counter|Text` und meldet LoRa-Empfang als
 `RX|sender|counter|rssi|snr|Text`. Pipes und Backslashes im Text werden von
 der Firmware escaped, damit das Protokoll eindeutig bleibt.
+
+Fuer Positionen sendet die Firmware:
+
+- `LOC|nodeId|lat|lon|accuracy|timestamp`

@@ -58,18 +58,37 @@ class BluetoothService {
       _lastError = null;
       await _ensureBluetoothPermissions();
       await disconnect();
-      _connection = await BluetoothConnection.toAddress(device.address);
-      _isConnected = true;
-      _inputBuffer = '';
-      _dataSubscription = _connection!.input.listen(
-        _onData,
-        onError: _lines.addError,
-        onDone: () {
-          _isConnected = false;
-          _lines.add('STATUS|INFO|Bluetooth connection closed');
-        },
-      );
-      return true;
+
+      for (var attempt = 0; attempt < 2; attempt++) {
+        _connection = await BluetoothConnection.toAddress(device.address);
+
+        // Some Android builds report a connect() success before the socket is
+        // actually stable enough to keep the RFCOMM channel open.
+        if (!_connection!.isConnected) {
+          await _connection!.close();
+          _connection = null;
+          if (attempt == 0) {
+            await Future<void>.delayed(const Duration(milliseconds: 250));
+            continue;
+          }
+          throw StateError('Bluetooth socket disconnected immediately after connect');
+        }
+
+        _inputBuffer = '';
+        _dataSubscription = _connection!.input.listen(
+          _onData,
+          onError: _lines.addError,
+          onDone: () {
+            _isConnected = false;
+            _lines.add('STATUS|INFO|Bluetooth connection closed');
+          },
+        );
+
+        _isConnected = true;
+        return true;
+      }
+
+      return false;
     } catch (error) {
       _isConnected = false;
       _lastError = error.toString();

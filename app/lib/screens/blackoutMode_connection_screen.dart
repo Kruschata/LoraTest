@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bluetooth_serial_plus/flutter_bluetooth_serial_plus.dart';
 import 'dart:async';
 import '../services/bluetooth_service.dart';
+import '../services/node_registry_service.dart';
+import 'device_map_screen.dart';
+import 'device_status_screen.dart';
 
 class BluetoothConnectionScreen extends StatefulWidget {
   const BluetoothConnectionScreen({Key? key}) : super(key: key);
@@ -168,6 +171,8 @@ class BluetoothChatScreen extends StatefulWidget {
 class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final List<_BluetoothChatLine> _messages = [];
+  final List<_BluetoothStatusLine> _statusMessages = [];
+  final NodeRegistryService _nodeRegistry = NodeRegistryService();
   StreamSubscription<String>? _dataSubscription;
 
   @override
@@ -180,7 +185,19 @@ class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
     _dataSubscription = widget.bluetoothService.getDataStream().listen(
       (data) {
         if (!mounted) return;
-        setState(() => _messages.insert(0, _BluetoothChatLine.parse(data)));
+        _nodeRegistry.ingestProtocolLine(data);
+
+        final statusLine = _BluetoothStatusLine.parse(data);
+        if (statusLine != null) {
+          setState(() {
+            _statusMessages.insert(0, statusLine);
+          });
+        }
+
+        final line = _BluetoothChatLine.parse(data);
+        if (line != null) {
+          setState(() => _messages.insert(0, line));
+        }
       },
       onError: (error) {
         if (!mounted) return;
@@ -224,6 +241,45 @@ class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
       appBar: AppBar(
         title: Text('Bluetooth: ${widget.deviceName}'),
         backgroundColor: Colors.deepOrange,
+        actions: [
+          IconButton(
+            tooltip: 'Status messages',
+            icon: const Icon(Icons.info_outline),
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                builder: (context) => _StatusMessagesSheet(
+                  messages: _statusMessages,
+                ),
+              );
+            },
+          ),
+          IconButton(
+            tooltip: 'Device list',
+            icon: const Icon(Icons.devices),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DeviceStatusScreen(),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            tooltip: 'Device map',
+            icon: const Icon(Icons.map),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DeviceMapScreen(),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -292,13 +348,32 @@ class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
   }
 }
 
+class _BluetoothStatusLine {
+  final String category;
+  final String message;
+  final DateTime timestamp;
+
+  const _BluetoothStatusLine(this.category, this.message, this.timestamp);
+
+  static _BluetoothStatusLine? parse(String line) {
+    final parts = line.split('|');
+    if (parts.isEmpty || parts.first != 'STATUS') return null;
+    if (parts.length < 3) return null;
+    return _BluetoothStatusLine(
+      parts[1],
+      parts.sublist(2).join(' | '),
+      DateTime.now(),
+    );
+  }
+}
+
 class _BluetoothChatLine {
   final String label;
   final String text;
 
   const _BluetoothChatLine(this.label, this.text);
 
-  factory _BluetoothChatLine.parse(String line) {
+  static _BluetoothChatLine? parse(String line) {
     final parts = line.split('|');
     if (parts.length >= 4 && parts.first == 'TX') {
       return _BluetoothChatLine('You', _unescape(parts.sublist(3).join('|')));
@@ -309,8 +384,12 @@ class _BluetoothChatLine {
         _unescape(parts.sublist(5).join('|')),
       );
     }
+    if (parts.length >= 5 && parts.first == 'LOC') {
+      // Location frames update the registry and are not shown in chat.
+      return null;
+    }
     if (parts.isNotEmpty && parts.first == 'STATUS') {
-      return _BluetoothChatLine('Status', parts.skip(2).join(' | '));
+      return null;
     }
     return _BluetoothChatLine('ESP', line);
   }
@@ -331,5 +410,64 @@ class _BluetoothChatLine {
     }
     if (escaped) output.write('\\');
     return output.toString();
+  }
+}
+
+class _StatusMessagesSheet extends StatelessWidget {
+  final List<_BluetoothStatusLine> messages;
+
+  const _StatusMessagesSheet({required this.messages});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Status messages',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (messages.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('No status messages yet.'),
+              )
+            else
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final message = messages[index];
+                    return ListTile(
+                      leading: const Icon(Icons.info_outline, color: Colors.deepOrange),
+                      title: Text(message.category),
+                      subtitle: Text(message.message),
+                      trailing: Text(
+                        '${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}',
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
