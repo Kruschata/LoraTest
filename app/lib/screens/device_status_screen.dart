@@ -29,7 +29,8 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
               .where((node) => node.statusAt(now) == NodePresenceStatus.online)
               .toList();
           final inactive = nodes
-              .where((node) => node.statusAt(now) == NodePresenceStatus.inactive)
+              .where(
+                  (node) => node.statusAt(now) == NodePresenceStatus.inactive)
               .toList();
           final offline = nodes
               .where((node) => node.statusAt(now) == NodePresenceStatus.offline)
@@ -50,7 +51,8 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
           return ListView(
             padding: const EdgeInsets.all(12),
             children: [
-              _buildHeaderCounts(online.length, inactive.length, offline.length),
+              _buildHeaderCounts(
+                  online.length, inactive.length, offline.length),
               const SizedBox(height: 12),
               _buildSection(
                 title: 'Online',
@@ -149,7 +151,9 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
         'Last seen ${_formatAge(now.difference(node.lastSeen))} ago\n'
         'RSSI: ${node.rssi?.toString() ?? '-'} dBm | '
         'SNR: ${node.snr?.toStringAsFixed(1) ?? '-'} | '
-        'Location: ${node.hasLocation ? 'available' : 'missing'}',
+        'Location: ${node.hasLocation ? 'available' : 'missing'}\n'
+        'Battery: ${node.batteryPercentage?.toString() ?? '-'}%'
+        '${node.batteryVoltage != null ? ' (${node.batteryVoltage!.toStringAsFixed(2)} V)' : ''}',
       ),
       isThreeLine: true,
       leading: const Icon(Icons.memory),

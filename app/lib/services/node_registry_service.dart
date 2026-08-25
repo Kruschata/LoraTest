@@ -13,6 +13,8 @@ class NodePresence {
   final double? latitude;
   final double? longitude;
   final double? accuracyMeters;
+  final int? batteryPercentage;
+  final double? batteryVoltage;
 
   const NodePresence({
     required this.nodeId,
@@ -23,6 +25,8 @@ class NodePresence {
     this.latitude,
     this.longitude,
     this.accuracyMeters,
+    this.batteryPercentage,
+    this.batteryVoltage,
   });
 
   NodePresence copyWith({
@@ -34,6 +38,8 @@ class NodePresence {
     double? latitude,
     double? longitude,
     double? accuracyMeters,
+    int? batteryPercentage,
+    double? batteryVoltage,
   }) {
     return NodePresence(
       nodeId: nodeId ?? this.nodeId,
@@ -44,6 +50,8 @@ class NodePresence {
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       accuracyMeters: accuracyMeters ?? this.accuracyMeters,
+      batteryPercentage: batteryPercentage ?? this.batteryPercentage,
+      batteryVoltage: batteryVoltage ?? this.batteryVoltage,
     );
   }
 
@@ -112,8 +120,7 @@ class NodeRegistryService {
       final nodeId = parts[1];
       final lat = double.tryParse(parts[2]);
       final lon = double.tryParse(parts[3]);
-      final accuracy =
-          parts.length >= 5 ? double.tryParse(parts[4]) : null;
+      final accuracy = parts.length >= 5 ? double.tryParse(parts[4]) : null;
       final timestamp =
           parts.length >= 6 ? DateTime.tryParse(parts[5]) : DateTime.now();
 
@@ -129,6 +136,22 @@ class NodeRegistryService {
       );
       return;
     }
+
+    if (parts.first == 'BAT' && parts.length >= 4) {
+      final nodeId = parts[1];
+      final percentage = int.tryParse(parts[2]);
+      final voltage = double.tryParse(parts[3]);
+
+      if (percentage == null || voltage == null) return;
+
+      _upsertNode(
+        nodeId: nodeId,
+        name: 'LilyGO-$nodeId',
+        lastSeen: DateTime.now(),
+        batteryPercentage: percentage,
+        batteryVoltage: voltage,
+      );
+    }
   }
 
   void _upsertNode({
@@ -140,6 +163,8 @@ class NodeRegistryService {
     double? latitude,
     double? longitude,
     double? accuracyMeters,
+    int? batteryPercentage,
+    double? batteryVoltage,
   }) {
     final existing = _nodes[nodeId];
     if (existing == null) {
@@ -152,6 +177,8 @@ class NodeRegistryService {
         latitude: latitude,
         longitude: longitude,
         accuracyMeters: accuracyMeters,
+        batteryPercentage: batteryPercentage,
+        batteryVoltage: batteryVoltage,
       );
     } else {
       _nodes[nodeId] = existing.copyWith(
@@ -162,6 +189,8 @@ class NodeRegistryService {
         latitude: latitude ?? existing.latitude,
         longitude: longitude ?? existing.longitude,
         accuracyMeters: accuracyMeters ?? existing.accuracyMeters,
+        batteryPercentage: batteryPercentage ?? existing.batteryPercentage,
+        batteryVoltage: batteryVoltage ?? existing.batteryVoltage,
       );
     }
 

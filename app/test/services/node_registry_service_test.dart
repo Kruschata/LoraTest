@@ -23,7 +23,8 @@ void main() {
     });
 
     test('ingests LOC frame with ISO-8601 UTC timestamp', () {
-      registry.ingestProtocolLine('LOC|2|48.137154|11.576124|3.5|2026-07-30T14:23:05Z');
+      registry.ingestProtocolLine(
+          'LOC|2|48.137154|11.576124|3.5|2026-07-30T14:23:05Z');
 
       final nodes = registry.nodesSnapshot;
       expect(nodes, hasLength(1));
@@ -38,9 +39,20 @@ void main() {
     });
 
     test('ignores invalid LOC frame coordinates', () {
-      registry.ingestProtocolLine('LOC|2|invalid|11.576124|3.5|2026-07-30T14:23:05Z');
+      registry.ingestProtocolLine(
+          'LOC|2|invalid|11.576124|3.5|2026-07-30T14:23:05Z');
 
       expect(registry.nodesSnapshot, isEmpty);
+    });
+
+    test('ingests BAT frame with percentage and voltage', () {
+      registry.ingestProtocolLine('BAT|2|83|3.97');
+
+      final nodes = registry.nodesSnapshot;
+      expect(nodes, hasLength(1));
+      expect(nodes.first.nodeId, '2');
+      expect(nodes.first.batteryPercentage, 83);
+      expect(nodes.first.batteryVoltage, 3.97);
     });
   });
 

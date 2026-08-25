@@ -35,9 +35,10 @@ class _BluetoothConnectionScreenState extends State<BluetoothConnectionScreen> {
       final devices = await _bluetoothService.getAvailableDevices();
       if (mounted) {
         setState(() {
-          // Show every paired device. Some Android versions initially return
-          // no friendly name, so filtering on "LoRa" hid a valid ESP.
-          _devices = devices;
+            _devices = devices
+                .where((device) =>
+                    device.name?.toLowerCase().contains('blackoutbuddy') ?? false)
+              .toList();
         });
       }
     } catch (e) {
@@ -117,7 +118,7 @@ class _BluetoothConnectionScreenState extends State<BluetoothConnectionScreen> {
                   const Padding(
                     padding: EdgeInsets.all(16.0),
                     child: Text(
-                      'No paired devices found. Pair LoRaChat-2 first in the Android Bluetooth settings, then tap Refresh.',
+                        'No paired BlackoutBuddy devices found.',
                     ),
                   )
                 else
@@ -413,10 +414,17 @@ class _BluetoothStatusLine {
   final DateTime timestamp;
   bool isRead;
 
-  _BluetoothStatusLine(this.category, this.message, this.timestamp, {this.isRead = false});
+  _BluetoothStatusLine(this.category, this.message, this.timestamp) : isRead = false;
 
   static _BluetoothStatusLine? parse(String line) {
     final parts = line.split('|');
+    if (parts.length >= 4 && parts.first == 'BAT') {
+      return _BluetoothStatusLine(
+        'BATTERY',
+        'Node ${parts[1]}: ${parts[2]}% (${parts[3]} V)',
+        DateTime.now(),
+      );
+    }
     if (parts.isEmpty || parts.first != 'STATUS') return null;
     if (parts.length < 3) return null;
     return _BluetoothStatusLine(

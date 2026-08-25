@@ -6,13 +6,17 @@
 #include <Adafruit_SSD1306.h>
 #include <TinyGPSPlus.h>
 #include "BluetoothSerial.h"
+#include "XPowersLib.h"
+
+
+#pragma region CONFIGURATION & GLOBAL STATE
 
 BluetoothSerial SerialBT;
 
 // Change this before flashing each LilyGO: 1, 2, 3, ...
-static const uint8_t DEVICE_ID =1;
-// Give every node a unique name (and DEVICE_ID) before flashing it.
-static const char *BT_NAME = "LoRaChat-1";
+static const uint8_t DEVICE_ID = 1;
+static const char *BT_NAME_BASE = "BlackoutBuddy";
+static String BT_NAME = String(BT_NAME_BASE) + "-" + String(DEVICE_ID);
 
 // LILYGO T-Beam AXP2101 with SX1276/SX1278.
 static const long LORA_FREQUENCY = 868E6;
@@ -28,8 +32,12 @@ static const int PIN_DISPLAY_SCL = 22;
 static const int PIN_DISPLAY_SDA = 21;
 static const int SCREEN_WIDTH = 128;
 static const int SCREEN_HEIGHT = 64;
+static const float BATTERY_EMPTY_VOLTAGE = 3.3f;
+static const float BATTERY_FULL_VOLTAGE = 4.2f;
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+XPowersAXP2101 pmu;
+bool pmuReady = false;
 String lastDisplayMessage = "-";
 int lastRSSI = 0;
 
@@ -53,16 +61,53 @@ static const int PIN_GPS_POWER = 4;
 static const uint32_t GPS_BAUD_RATE = 9600;
 static const uint32_t LOC_SEND_INTERVAL_MS = 15000;
 static const uint32_t GPS_STATUS_INTERVAL_MS = 30000;
+static const uint32_t DISPLAY_UPDATE_INTERVAL_MS = 60000;
 
 uint32_t locationCounter = 0;
 unsigned long lastLocSendMs = 0;
 unsigned long lastGpsStatusMs = 0;
+unsigned long lastDisplayUpdateMs = 0;
 uint32_t gpsCharsAtLastStatus = 0;
 bool gpsPowerEnabled = false;
 
-// ============================================================
-// DISPLAY - Funktionen für das OLED-Display
-// ============================================================
+#pragma endregion
+
+#pragma region DISPLAY - OLED display
+
+void emitLine(const String &line);
+
+bool readBatteryVoltage(float &voltage) {
+  if (!pmuReady) {
+    return false;
+  }
+
+  const uint16_t millivolts = pmu.getBattVoltage();
+  if (millivolts == 0) {
+    return false;
+  }
+
+  voltage = millivolts / 1000.0f;
+  return voltage > 2.5f && voltage < 5.0f;
+}
+
+int batteryPercent(float voltage) {
+  const int percent = (int)(
+    (voltage - BATTERY_EMPTY_VOLTAGE) * 100.0f /
+    (BATTERY_FULL_VOLTAGE - BATTERY_EMPTY_VOLTAGE)
+  );
+  return constrain(percent, 0, 100);
+}
+
+int currentBatteryPercent(float voltage) {
+  if (pmuReady) {
+    const int percent = pmu.getBatteryPercent();
+    if (percent >= 0 && percent <= 100) {
+      return percent;
+    }
+  }
+
+  return batteryPercent(voltage);
+}
 
 void updateDisplay() {
   display.clearDisplay();
@@ -70,16 +115,30 @@ void updateDisplay() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
+  float voltage = 0.0f;
+  const bool batteryAvailable = readBatteryVoltage(voltage);
+
   display.setCursor(0, 0);
   display.print("Name:");
-  display.println("LoraChat-" + String(DEVICE_ID));
+  display.println(BT_NAME);
 
-  display.setCursor(0, 16);
+  display.setCursor(0, 12);
+  display.print("BAT: ");
+  if (batteryAvailable) {
+    display.print(currentBatteryPercent(voltage));
+    display.print("% ");
+    display.print(voltage, 2);
+    display.println("V");
+  } else {
+    display.println("--");
+  }
+
+  display.setCursor(0, 24);
   display.print("RSSI: " );
   display.print(lastRSSI);
   display.println("dbm");
 
-  display.setCursor(0, 32);
+  display.setCursor(0, 36);
   display.println("Msg:");
 
   String msg = lastDisplayMessage;
@@ -87,8 +146,10 @@ void updateDisplay() {
     msg = msg.substring(0, 40);
   }
 
-  display.setCursor(0, 44);
+  display.setCursor(0, 48);
   display.println(msg);
+
+  display.display();
 }
 
 bool initDisplay() {
@@ -103,9 +164,9 @@ bool initDisplay() {
   return false;
 }
 
-// ============================================================
-// UTILITY - Hilfsfunktionen für Escaping und String-Verarbeitung
-// ============================================================
+#pragma endregion
+
+#pragma region UTILITY - Escaping and string handling
 
 String escapeField(const String &value) {
   String out;
@@ -161,9 +222,9 @@ int findUnescapedPipe(const String &value, int startAt) {
   return -1;
 }
 
-// ============================================================
-// MESSAGE LOG - Verwaltung des Message-Buffers und Ausgabe
-// ============================================================
+#pragma endregion
+
+#pragma region MESSAGE LOG - Message buffer and output
 
 //Ringpuffer für die letzten 20 Nachrichten
 void addMessageLog(const String &line) {
@@ -192,6 +253,10 @@ void emitChatLine(const String &line) {
   addMessageLog(line);
   emitLine(line);
 }
+
+#pragma endregion
+
+#pragma region GPS - Power, status, and location
 
 bool axpReadRegister(uint8_t reg, uint8_t &value) {
   Wire.beginTransmission(0x34);
@@ -278,6 +343,14 @@ void emitLocLine(
   emitLine(line);
 }
 
+void sendLoRaPayload(const String &payload) {
+  LoRa.idle();
+  LoRa.beginPacket();
+  LoRa.print(payload);
+  LoRa.endPacket();
+  LoRa.receive();
+}
+
 void sendLocationBroadcast() {
   if (!gps.location.isValid()) {
     return;
@@ -297,11 +370,7 @@ void sendLocationBroadcast() {
     payload += "|" + timestampUtc;
   }
 
-  LoRa.idle();
-  LoRa.beginPacket();
-  LoRa.print(payload);
-  LoRa.endPacket();
-  LoRa.receive();
+  sendLoRaPayload(payload);
 
   // Also emit local node location immediately to USB/Bluetooth app clients.
   emitLocLine(String(DEVICE_ID), lat, lon, hdopMeters, timestampUtc);
@@ -334,9 +403,9 @@ void emitGpsStatus() {
   );
 }
 
-// ============================================================
-// LORA - LoRa Kommunikation und Chat-Funktionen
-// ============================================================
+#pragma endregion
+
+#pragma region LORA - Communication and chat
 
 void sendChatMessage(String text) {
   text.trim();
@@ -352,11 +421,7 @@ void sendChatMessage(String text) {
   String escapedText = escapeField(text);
   String payload = "LCHAT|1|" + String(DEVICE_ID) + "|" + String(messageCounter) + "|" + escapedText;
 
-  LoRa.idle();
-  LoRa.beginPacket();
-  LoRa.print(payload);
-  LoRa.endPacket();
-  LoRa.receive();
+  sendLoRaPayload(payload);
 
   emitChatLine("TX|" + String(DEVICE_ID) + "|" + String(messageCounter) + "|" + escapedText);
 
@@ -402,6 +467,11 @@ void readCommandStream(Stream &stream, String &buffer) {
   }
 }
 
+void emitRawPacket(const String &payload) {
+  emitLine("RAW|" + String(LoRa.packetRssi()) + "|" +
+           String(LoRa.packetSnr()) + "|" + escapeField(payload));
+}
+
 void handleIncomingLoRa() {
   int packetSize = LoRa.parsePacket();
   if (packetSize <= 0) {
@@ -423,7 +493,7 @@ void handleIncomingLoRa() {
     int p6 = payload.indexOf('|', p5 + 1);
 
     if (p1 < 0 || p2 < 0 || p3 < 0 || p4 < 0 || p5 < 0 || p6 < 0) {
-      emitLine("RAW|" + String(LoRa.packetRssi()) + "|" + String(LoRa.packetSnr()) + "|" + escapeField(payload));
+      emitRawPacket(payload);
       return;
     }
 
@@ -456,7 +526,7 @@ void handleIncomingLoRa() {
   int p4 = findUnescapedPipe(payload, p3 + 1);
 
   if (!payload.startsWith("LCHAT|") || p1 < 0 || p2 < 0 || p3 < 0 || p4 < 0) {
-    emitLine("RAW|" + String(LoRa.packetRssi()) + "|" + String(LoRa.packetSnr()) + "|" + escapeField(payload));
+    emitRawPacket(payload);
     return;
   }
 
@@ -477,9 +547,9 @@ void handleIncomingLoRa() {
   );
 }
 
-// ============================================================
-// SETUP & LOOP - Initialisierung und Hauptschleife
-// ============================================================
+#pragma endregion
+
+#pragma region SETUP & LOOP - Initialization and main loop
 
 void setup() {
   Serial.begin(115200);
@@ -487,6 +557,14 @@ void setup() {
 
   // Init I2C early: needed for OLED and possible AXP power management.
   Wire.begin(PIN_DISPLAY_SDA, PIN_DISPLAY_SCL);
+
+  pmuReady = pmu.init(Wire, PIN_DISPLAY_SDA, PIN_DISPLAY_SCL, 0x34);
+  if (pmuReady) {
+    pmu.enableBattDetection();
+    pmu.enableBattVoltageMeasure();
+  } else {
+    emitLine("STATUS|ERROR|AXP2101 init failed");
+  }
 
   enableGpsPower();
   delay(100);
@@ -502,7 +580,7 @@ void setup() {
   }
 
   // Bluetooth Classic / SPP. A fixed PIN makes pairing with Android reliable.
-  if (!SerialBT.begin(BT_NAME)) {
+  if (!SerialBT.begin(BT_NAME.c_str())) {
     emitLine("STATUS|ERROR|Bluetooth init failed");
   } else {
     SerialBT.setPin("1234");
@@ -537,21 +615,30 @@ void setup() {
 }
 
 void loop() {
+  const uint32_t now = millis();
+
   while (GPSSerial.available()) {
     gps.encode((char)GPSSerial.read());
   }
 
-  if (millis() - lastGpsStatusMs >= GPS_STATUS_INTERVAL_MS) {
-    lastGpsStatusMs = millis();
+  if (now - lastGpsStatusMs >= GPS_STATUS_INTERVAL_MS) {
+    lastGpsStatusMs = now;
     emitGpsStatus();
   }
 
-  if (millis() - lastLocSendMs >= LOC_SEND_INTERVAL_MS) {
-    lastLocSendMs = millis();
+  if (now - lastLocSendMs >= LOC_SEND_INTERVAL_MS) {
+    lastLocSendMs = now;
     sendLocationBroadcast();
+  }
+
+  if (now - lastDisplayUpdateMs >= DISPLAY_UPDATE_INTERVAL_MS) {
+    lastDisplayUpdateMs = now;
+    updateDisplay();
   }
 
   readCommandStream(Serial, usbLine);
   readCommandStream(SerialBT, btLine);
   handleIncomingLoRa();
 }
+
+#pragma endregion

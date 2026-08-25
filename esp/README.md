@@ -9,12 +9,12 @@ Funkpfad zwischen Knoten ist LoRa.
 
 ## Vor dem Flashen
 
-In `src/main.cpp` jedem Knoten eine eindeutige ID und einen eindeutigen
-Bluetooth-Namen geben:
+In `src/main.cpp` jedem Knoten eine eindeutige ID geben. Der Bluetooth-Name
+wird automatisch aus der ID gebildet:
 
 ```cpp
 static const uint8_t DEVICE_ID = 1;
-static const char *BT_NAME = "LoRaChat-1";
+// Bluetooth-Name: BlackoutBuddy-1
 ```
 
 Alle Knoten müssen dieselbe LoRa-Frequenz und dieselben LoRa-Parameter
@@ -80,3 +80,4 @@ der Firmware escaped, damit das Protokoll eindeutig bleibt.
 Fuer Positionen sendet die Firmware:
 
 - `LOC|nodeId|lat|lon|accuracy|timestamp`
+
