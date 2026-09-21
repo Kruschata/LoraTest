@@ -11,16 +11,13 @@
 
 #pragma region CONFIGURATION & GLOBAL STATE
 
-BluetoothSerial SerialBT;
-
-// Change this before flashing each LilyGO: 1, 2, 3, ...
+// Bluetooth configuration
 static const uint8_t DEVICE_ID = 1;
 static const char *BT_NAME_BASE = "BlackoutBuddy";
 static String BT_NAME = String(BT_NAME_BASE) + "-" + String(DEVICE_ID);
 
-// LILYGO T-Beam AXP2101 with SX1276/SX1278.
+// LoRa configuration
 static const long LORA_FREQUENCY = 868E6;
-
 static const int PIN_LORA_SCK = 5;
 static const int PIN_LORA_MISO = 19;
 static const int PIN_LORA_MOSI = 27;
@@ -28,85 +25,65 @@ static const int PIN_LORA_SS = 18;
 static const int PIN_LORA_RST = 23;
 static const int PIN_LORA_DIO0 = 26;
 
+// Display configuration
 static const int PIN_DISPLAY_SCL = 22;
 static const int PIN_DISPLAY_SDA = 21;
 static const int SCREEN_WIDTH = 128;
 static const int SCREEN_HEIGHT = 64;
-static const float BATTERY_EMPTY_VOLTAGE = 3.3f;
-static const float BATTERY_FULL_VOLTAGE = 4.2f;
 
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-XPowersAXP2101 pmu;
-bool pmuReady = false;
-String lastDisplayMessage = "-";
-int lastRSSI = 0;
 
-uint32_t messageCounter = 0;
-String usbLine;
-String btLine;
-
-static const uint8_t MESSAGE_LOG_SIZE = 20;
-String messageLog[MESSAGE_LOG_SIZE];
-uint8_t messageLogStart = 0;
-uint8_t messageLogCount = 0;
-
-TinyGPSPlus gps;
-HardwareSerial GPSSerial(1);
-
-// T-Beam GPS defaults (NEO-6M). Adjust if your hardware revision differs.
+// GPS configuration
 static const int PIN_GPS_RX = 34;
 static const int PIN_GPS_TX = 12;
-// Many T-Beam revisions require an explicit GPS power enable on GPIO4.
 static const int PIN_GPS_POWER = 4;
 static const uint32_t GPS_BAUD_RATE = 9600;
 static const uint32_t LOC_SEND_INTERVAL_MS = 15000;
 static const uint32_t GPS_STATUS_INTERVAL_MS = 30000;
 static const uint32_t DISPLAY_UPDATE_INTERVAL_MS = 60000;
 
+// Hardware instances
+BluetoothSerial SerialBT;
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+XPowersAXP2101 pmu;
+TinyGPSPlus gps;
+HardwareSerial GPSSerial(1);
+
+// Runtime state
+bool pmuReady = false;
+bool gpsPowerEnabled = false;
+
+String lastDisplayMessage = "-";
+int lastRSSI = 0;
+
+uint32_t messageCounter = 0;
 uint32_t locationCounter = 0;
+
+String usbLine;
+String btLine;
+
 unsigned long lastLocSendMs = 0;
 unsigned long lastGpsStatusMs = 0;
 unsigned long lastDisplayUpdateMs = 0;
 uint32_t gpsCharsAtLastStatus = 0;
-bool gpsPowerEnabled = false;
 
+// Message log
+static const uint8_t MESSAGE_LOG_SIZE = 20;
+String messageLog[MESSAGE_LOG_SIZE];
+uint8_t messageLogStart = 0;
+uint8_t messageLogCount = 0;
 #pragma endregion
 
 #pragma region DISPLAY - OLED display
 
 void emitLine(const String &line);
 
-bool readBatteryVoltage(float &voltage) {
+int currentBatteryPercent() {
   if (!pmuReady) {
-    return false;
+    return -1;
   }
 
-  const uint16_t millivolts = pmu.getBattVoltage();
-  if (millivolts == 0) {
-    return false;
-  }
-
-  voltage = millivolts / 1000.0f;
-  return voltage > 2.5f && voltage < 5.0f;
-}
-
-int batteryPercent(float voltage) {
-  const int percent = (int)(
-    (voltage - BATTERY_EMPTY_VOLTAGE) * 100.0f /
-    (BATTERY_FULL_VOLTAGE - BATTERY_EMPTY_VOLTAGE)
-  );
-  return constrain(percent, 0, 100);
-}
-
-int currentBatteryPercent(float voltage) {
-  if (pmuReady) {
-    const int percent = pmu.getBatteryPercent();
-    if (percent >= 0 && percent <= 100) {
-      return percent;
-    }
-  }
-
-  return batteryPercent(voltage);
+  const int percent = pmu.getBatteryPercent();
+  return percent >= 0 && percent <= 100 ? percent : -1;
 }
 
 void updateDisplay() {
@@ -115,8 +92,7 @@ void updateDisplay() {
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
 
-  float voltage = 0.0f;
-  const bool batteryAvailable = readBatteryVoltage(voltage);
+  const int batteryPercent = currentBatteryPercent();
 
   display.setCursor(0, 0);
   display.print("Name:");
@@ -124,11 +100,9 @@ void updateDisplay() {
 
   display.setCursor(0, 12);
   display.print("BAT: ");
-  if (batteryAvailable) {
-    display.print(currentBatteryPercent(voltage));
-    display.print("% ");
-    display.print(voltage, 2);
-    display.println("V");
+  if (batteryPercent >= 0) {
+    display.print(batteryPercent);
+    display.println("%");
   } else {
     display.println("--");
   }
@@ -136,7 +110,7 @@ void updateDisplay() {
   display.setCursor(0, 24);
   display.print("RSSI: " );
   display.print(lastRSSI);
-  display.println("dbm");
+  display.println("dBm");
 
   display.setCursor(0, 36);
   display.println("Msg:");
