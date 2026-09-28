@@ -6,25 +6,12 @@ import 'package:blackout_buddy/screens/blackoutMode_connection_screen.dart';
 import 'package:blackout_buddy/services/bluetooth_service.dart';
 
 void main() {
-  testWidgets('shows connection mode entry screen', (WidgetTester tester) async {
+  testWidgets('connects to a device before choosing a mode',
+      (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
 
-    expect(find.text('BlackoutBuddy - Connection Mode'), findsOneWidget);
-    expect(find.text('Choose Connection Mode'), findsOneWidget);
-    expect(find.text('Blackout Mode'), findsOneWidget);
-  });
-
-  testWidgets('blackout mode card is tappable', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(const MyApp());
-
-    final blackoutCard = find.byWidgetPredicate(
-      (widget) => widget is GestureDetector && widget.onTap != null,
-    );
-    expect(blackoutCard, findsOneWidget);
-    final gesture = tester.widget<GestureDetector>(blackoutCard.first);
-    expect(gesture.onTap, isNotNull);
+    expect(find.text('Connect via Bluetooth'), findsOneWidget);
+    expect(find.text('Choose Connection Mode'), findsNothing);
   });
 
   testWidgets('chat screen exposes a dedicated status messages action', (

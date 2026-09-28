@@ -17,7 +17,7 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('LilyGO Device Status'),
-        backgroundColor: Colors.deepOrange,
+        backgroundColor: Colors.indigo,
       ),
       body: AnimatedBuilder(
         animation: _nodeRegistry.nodesListenable,

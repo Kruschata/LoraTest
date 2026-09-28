@@ -3,6 +3,7 @@ import 'package:flutter_bluetooth_serial_plus/flutter_bluetooth_serial_plus.dart
 import 'dart:async';
 import '../services/bluetooth_service.dart';
 import '../services/node_registry_service.dart';
+import 'connection_mode_screen.dart';
 import 'device_map_screen.dart';
 import 'device_status_screen.dart';
 
@@ -35,9 +36,9 @@ class _BluetoothConnectionScreenState extends State<BluetoothConnectionScreen> {
       final devices = await _bluetoothService.getAvailableDevices();
       if (mounted) {
         setState(() {
-            _devices = devices
-                .where((device) =>
-                    device.name?.toLowerCase().contains('blackoutbuddy') ?? false)
+          _devices = devices
+              .where((device) =>
+                  device.name?.toLowerCase().contains('blackoutbuddy') ?? false)
               .toList();
         });
       }
@@ -67,11 +68,11 @@ class _BluetoothConnectionScreenState extends State<BluetoothConnectionScreen> {
           SnackBar(content: Text('Connected to ${device.name}')),
         );
 
-        // Navigate to chat screen with Bluetooth connection
-        Navigator.pushReplacement(
+        // Choose the operating mode only after the local ESP is connected.
+        Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => BluetoothChatScreen(
+            builder: (context) => ConnectionModeScreen(
               bluetoothService: _bluetoothService,
               deviceName: device.name ?? 'Unknown Device',
             ),
@@ -101,7 +102,8 @@ class _BluetoothConnectionScreenState extends State<BluetoothConnectionScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Connect via Bluetooth'),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: Colors.deepOrange,
+        foregroundColor: Colors.white,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -118,7 +120,7 @@ class _BluetoothConnectionScreenState extends State<BluetoothConnectionScreen> {
                   const Padding(
                     padding: EdgeInsets.all(16.0),
                     child: Text(
-                        'No paired BlackoutBuddy devices found.',
+                      'No paired BlackoutBuddy devices found.',
                     ),
                   )
                 else
@@ -270,7 +272,7 @@ class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Bluetooth: ${widget.deviceName}'),
-        backgroundColor: Colors.deepPurple.shade700,
+        backgroundColor: Colors.deepOrange,
         foregroundColor: Colors.white,
         actions: [
           Stack(
@@ -296,8 +298,10 @@ class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
                   right: -3,
                   top: -2,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    constraints:
+                        const BoxConstraints(minWidth: 16, minHeight: 16),
                     decoration: const BoxDecoration(
                       color: Colors.orange,
                       shape: BoxShape.circle,
@@ -389,8 +393,8 @@ class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
                     ),
                   ),
                 ),
@@ -414,7 +418,8 @@ class _BluetoothStatusLine {
   final DateTime timestamp;
   bool isRead;
 
-  _BluetoothStatusLine(this.category, this.message, this.timestamp) : isRead = false;
+  _BluetoothStatusLine(this.category, this.message, this.timestamp)
+      : isRead = false;
 
   static _BluetoothStatusLine? parse(String line) {
     final parts = line.split('|');
@@ -523,7 +528,8 @@ class _StatusMessagesSheet extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final message = messages[index];
                     return ListTile(
-                      leading: const Icon(Icons.info_outline, color: Colors.deepOrange),
+                      leading: const Icon(Icons.info_outline,
+                          color: Colors.deepOrange),
                       title: Text(message.category),
                       subtitle: Text(message.message),
                       trailing: Text(

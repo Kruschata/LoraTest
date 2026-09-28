@@ -1,19 +1,23 @@
 import 'package:flutter/material.dart';
+import '../services/bluetooth_service.dart';
 import 'blackoutMode_connection_screen.dart';
+import 'non_blackout_home_screen.dart';
 
-class ConnectionModeScreen extends StatefulWidget {
-  const ConnectionModeScreen({Key? key}) : super(key: key);
+class ConnectionModeScreen extends StatelessWidget {
+  final BluetoothService bluetoothService;
+  final String deviceName;
 
-  @override
-  State<ConnectionModeScreen> createState() => _ConnectionModeScreenState();
-}
+  const ConnectionModeScreen({
+    Key? key,
+    required this.bluetoothService,
+    required this.deviceName,
+  }) : super(key: key);
 
-class _ConnectionModeScreenState extends State<ConnectionModeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('BlackoutBuddy - Connection Mode'),
+        title: Text('Connected: $deviceName'),
         backgroundColor: Colors.deepPurple,
       ),
       body: Center(
@@ -41,19 +45,64 @@ class _ConnectionModeScreenState extends State<ConnectionModeScreen> {
               subtitle: 'Communication only over LORA',
               description: 'Blackout mode - no internet needed',
               color: Colors.deepOrange,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const BluetoothConnectionScreen(),
-                  ),
-                );
-              },
+              onTap: () => _openBlackoutMode(context),
+            ),
+            const SizedBox(height: 16),
+            _buildConnectionCard(
+              context,
+              icon: Icons.cloud_outlined,
+              title: 'Non-Blackout Mode',
+              subtitle: 'Gateway-assisted connectivity',
+              description: 'Use network services when a gateway is available',
+              color: Colors.indigo,
+              onTap: () => _openTtnMode(context),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _openBlackoutMode(BuildContext context) async {
+    await _openMode(
+      context,
+      command: 'MODE|BLACKOUT',
+      screen: BluetoothChatScreen(
+        bluetoothService: bluetoothService,
+        deviceName: deviceName,
+      ),
+    );
+  }
+
+  Future<void> _openTtnMode(BuildContext context) async {
+    await _openMode(
+      context,
+      command: 'MODE|TTN',
+      screen: NonBlackoutHomeScreen(
+        bluetoothService: bluetoothService,
+        deviceName: deviceName,
+      ),
+    );
+  }
+
+  Future<void> _openMode(
+    BuildContext context, {
+    required String command,
+    required Widget screen,
+  }) async {
+    try {
+      await bluetoothService.sendCommand(command);
+      if (!context.mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => screen),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not select mode: $error')),
+      );
+    }
   }
 
   Widget _buildConnectionCard(

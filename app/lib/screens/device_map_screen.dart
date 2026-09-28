@@ -20,7 +20,7 @@ class _DeviceMapScreenState extends State<DeviceMapScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('LilyGO Map'),
-        backgroundColor: Colors.deepOrange,
+        backgroundColor: Colors.indigo,
       ),
       body: AnimatedBuilder(
         animation: _nodeRegistry.nodesListenable,
@@ -123,7 +123,8 @@ class _DeviceMapScreenState extends State<DeviceMapScreen> {
               Text('Status: ${status.name}'),
               Text('Last seen: ${node.lastSeen.toLocal()}'),
               Text('Lat/Lon: ${node.latitude}, ${node.longitude}'),
-              Text('Accuracy: ${node.accuracyMeters?.toStringAsFixed(1) ?? '-'} m'),
+              Text(
+                  'Accuracy: ${node.accuracyMeters?.toStringAsFixed(1) ?? '-'} m'),
               Text('RSSI: ${node.rssi?.toString() ?? '-'} dBm'),
               Text('SNR: ${node.snr?.toStringAsFixed(1) ?? '-'}'),
             ],
@@ -134,9 +135,8 @@ class _DeviceMapScreenState extends State<DeviceMapScreen> {
   }
 
   void _zoomToAll() {
-    final withLocation = _nodeRegistry.nodesSnapshot
-        .where((node) => node.hasLocation)
-        .toList();
+    final withLocation =
+        _nodeRegistry.nodesSnapshot.where((node) => node.hasLocation).toList();
     if (withLocation.isEmpty) return;
 
     if (withLocation.length == 1) {
@@ -151,8 +151,10 @@ class _DeviceMapScreenState extends State<DeviceMapScreen> {
     final lons = withLocation.map((node) => node.longitude!).toList();
 
     final bounds = LatLngBounds(
-      LatLng(lats.reduce((a, b) => a < b ? a : b), lons.reduce((a, b) => a < b ? a : b)),
-      LatLng(lats.reduce((a, b) => a > b ? a : b), lons.reduce((a, b) => a > b ? a : b)),
+      LatLng(lats.reduce((a, b) => a < b ? a : b),
+          lons.reduce((a, b) => a < b ? a : b)),
+      LatLng(lats.reduce((a, b) => a > b ? a : b),
+          lons.reduce((a, b) => a > b ? a : b)),
     );
 
     _mapController.fitCamera(

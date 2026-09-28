@@ -9,8 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 class BluetoothService {
   static final BluetoothService _instance = BluetoothService._internal();
   final FlutterBluetoothSerial _bluetooth = FlutterBluetoothSerial.instance;
-  final StreamController<String> _lines =
-      StreamController<String>.broadcast();
+  final StreamController<String> _lines = StreamController<String>.broadcast();
 
   BluetoothConnection? _connection;
   StreamSubscription<Uint8List>? _dataSubscription;
@@ -71,7 +70,8 @@ class BluetoothService {
             await Future<void>.delayed(const Duration(milliseconds: 250));
             continue;
           }
-          throw StateError('Bluetooth socket disconnected immediately after connect');
+          throw StateError(
+              'Bluetooth socket disconnected immediately after connect');
         }
 
         _inputBuffer = '';
@@ -105,14 +105,23 @@ class BluetoothService {
   }
 
   Future<void> sendMessage(String message) async {
-    if (_connection == null || !_isConnected) {
-      throw StateError('Bluetooth not connected');
-    }
     final text = message.trim();
     if (text.isEmpty) return;
 
-    // ESP firmware accepts one CHAT command per newline.
-    _connection!.output.add(Uint8List.fromList(utf8.encode('CHAT|$text\n')));
+    await sendCommand('CHAT|$text');
+  }
+
+  Future<void> sendCommand(String command) async {
+    if (_connection == null || !_isConnected) {
+      throw StateError('Bluetooth not connected');
+    }
+    final text = command.trim();
+    if (text.isEmpty) return;
+    if (text.contains('\n') || text.contains('\r')) {
+      throw ArgumentError('Commands must contain exactly one line');
+    }
+
+    _connection!.output.add(Uint8List.fromList(utf8.encode('$text\n')));
     await _connection!.output.allSent;
   }
 

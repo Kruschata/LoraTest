@@ -8,6 +8,11 @@
 #include "BluetoothSerial.h"
 #include "XPowersLib.h"
 
+#define DISABLE_BEACONS 1
+#define hal_init lmic_hal_init
+#define hal_init_ex lmic_hal_init_ex
+#include <lmic.h>
+#include <hal/hal.h>
 
 #pragma region CONFIGURATION & GLOBAL STATE
 
@@ -15,6 +20,16 @@
 static const uint8_t DEVICE_ID = 1;
 static const char *BT_NAME_BASE = "BlackoutBuddy";
 static String BT_NAME = String(BT_NAME_BASE) + "-" + String(DEVICE_ID);
+
+enum class DeviceMode {
+  BLACKOUT,
+  TTN
+};
+
+static DeviceMode currentMode = DeviceMode::BLACKOUT;
+static bool ttnJoined = false;
+static bool ttnReady = false;
+static String ttnPendingText;
 
 // LoRa configuration
 static const long LORA_FREQUENCY = 868E6;
@@ -73,9 +88,187 @@ uint8_t messageLogStart = 0;
 uint8_t messageLogCount = 0;
 #pragma endregion
 
+void emitLine(const String &line);
+void updateDisplay();
+
+#pragma region TTN / LoRaWAN - non-blackout mode
+
+static const u1_t APPEUI[8] PROGMEM = { 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01 };
+static const u1_t DEVEUI[8] PROGMEM = { 0x26, 0x7D, 0x07, 0xD0, 0x7E, 0xD5, 0xB3, 0x70 };
+static const u1_t APPKEY[16] PROGMEM = {
+  0x42, 0x79, 0x36, 0x4F, 0xBA, 0xA2, 0x4D, 0xFC,
+  0xFD, 0x82, 0xC4, 0x71, 0xFD, 0x45, 0x1A, 0x2C
+};
+
+const lmic_pinmap lmic_pins = {
+  .nss = 18,
+  .rxtx = LMIC_UNUSED_PIN,
+  .rst = 23,
+  .dio = { 26, 35, 34 }
+};
+
+void os_getArtEui(u1_t *buf) {
+  memcpy_P(buf, APPEUI, 8);
+}
+
+void os_getDevEui(u1_t *buf) {
+  memcpy_P(buf, DEVEUI, 8);
+}
+
+void os_getDevKey(u1_t *buf) {
+  memcpy_P(buf, APPKEY, 16);
+}
+
+void emitTtnStatus(const String &status) {
+  emitLine("TTN|" + status);
+}
+
+void ttnJoinIfNeeded() {
+  if (currentMode != DeviceMode::TTN || ttnJoined || !ttnReady) {
+    return;
+  }
+
+  LMIC_startJoining();
+  emitTtnStatus("JOINING");
+}
+
+void sendTTNText(const String &text) {
+  if (text.length() == 0) {
+    return;
+  }
+
+  if (currentMode != DeviceMode::TTN) {
+    emitLine("STATUS|TTN|MODE|BLACKOUT_ONLY");
+    return;
+  }
+
+  String trimmed = text;
+  trimmed.trim();
+  if (trimmed.length() == 0) {
+    return;
+  }
+
+  if (trimmed.length() > 50) {
+    trimmed = trimmed.substring(0, 50);
+  }
+
+  if (!ttnJoined) {
+    ttnPendingText = trimmed;
+    ttnJoinIfNeeded();
+    emitLine("STATUS|TTN|QUEUED|" + trimmed);
+    return;
+  }
+
+  uint8_t payload[52];
+  const size_t len = min((size_t)trimmed.length(), sizeof(payload));
+  for (size_t i = 0; i < len; i++) {
+    payload[i] = (uint8_t)trimmed.charAt(i);
+  }
+
+  LMIC_setTxData2(1, payload, len, 0);
+  emitLine("TTN|TX|" + trimmed);
+}
+
+void configureTTN() {
+  currentMode = DeviceMode::TTN;
+  ttnReady = true;
+  os_init_ex((const void *)&lmic_pins);
+  LMIC_setLinkCheckMode(0);
+  LMIC_selectSubBand(1);
+  LMIC_setAdrMode(0);
+  LMIC_setDrTxpow(DR_SF7, 14);
+  emitTtnStatus("READY");
+  ttnJoinIfNeeded();
+}
+
+void onEvent(ev_t ev) {
+  switch (ev) {
+    case EV_SCAN_TIMEOUT:
+      emitTtnStatus("SCAN_TIMEOUT");
+      break;
+    case EV_BEACON_FOUND:
+      emitTtnStatus("BEACON_FOUND");
+      break;
+    case EV_BEACON_MISSED:
+      emitTtnStatus("BEACON_MISSED");
+      break;
+    case EV_JOINING:
+      emitTtnStatus("JOINING");
+      break;
+    case EV_JOINED:
+      ttnJoined = true;
+      emitTtnStatus("JOINED");
+      if (ttnPendingText.length() > 0) {
+        const String queued = ttnPendingText;
+        ttnPendingText = "";
+        sendTTNText(queued);
+      }
+      break;
+    case EV_RFU1:
+      emitTtnStatus("RFU1");
+      break;
+    case EV_JOIN_TXCOMPLETE:
+      emitTtnStatus("JOIN_TXCOMPLETE");
+      break;
+    case EV_TXCOMPLETE:
+      emitTtnStatus("TX_COMPLETE");
+      if (LMIC.txrxFlags & TXRX_ACK) {
+        emitTtnStatus("ACK");
+      }
+      if (LMIC.dataLen > 0) {
+        String downlink;
+        for (uint8_t i = 0; i < LMIC.dataLen; i++) {
+          downlink += (char)LMIC.frame[LMIC.dataBeg + i];
+        }
+        downlink.trim();
+        lastDisplayMessage = downlink;
+        updateDisplay();
+        emitLine("TTN|DOWNLINK|" + downlink);
+      }
+      break;
+    case EV_LOST_TSYNC:
+      emitTtnStatus("LOST_TSYNC");
+      break;
+    case EV_RESET:
+      emitTtnStatus("RESET");
+      break;
+    case EV_RXCOMPLETE:
+      emitTtnStatus("RX_COMPLETE");
+      if (LMIC.dataLen > 0) {
+        String downlink;
+        for (uint8_t i = 0; i < LMIC.dataLen; i++) {
+          downlink += (char)LMIC.frame[LMIC.dataBeg + i];
+        }
+        downlink.trim();
+        lastDisplayMessage = downlink;
+        updateDisplay();
+        emitLine("TTN|DOWNLINK|" + downlink);
+      }
+      break;
+    case EV_LINK_DEAD:
+      emitTtnStatus("LINK_DEAD");
+      ttnJoined = false;
+      break;
+    case EV_LINK_ALIVE:
+      emitTtnStatus("LINK_ALIVE");
+      break;
+    default:
+      break;
+  }
+}
+
+void setupTTNMode() {
+  if (!ttnReady) {
+    configureTTN();
+  }
+}
+
+#pragma endregion
+
 #pragma region DISPLAY - OLED display
 
 void emitLine(const String &line);
+void updateDisplay();
 
 int currentBatteryPercent() {
   if (!pmuReady) {
@@ -409,6 +602,37 @@ void handleCommand(String line) {
     return;
   }
 
+  if (line == "MODE|TTN") {
+    setupTTNMode();
+    emitLine("STATUS|MODE|TTN");
+    return;
+  }
+
+  if (line == "MODE|BLACKOUT") {
+    currentMode = DeviceMode::BLACKOUT;
+    ttnJoined = false;
+    emitLine("STATUS|MODE|BLACKOUT");
+    return;
+  }
+
+  if (line == "TTN|JOIN") {
+    setupTTNMode();
+    ttnJoinIfNeeded();
+    return;
+  }
+
+  if (line.startsWith("TTN|SEND|")) {
+    setupTTNMode();
+    sendTTNText(line.substring(9));
+    return;
+  }
+
+  if (line.startsWith("TTN|TXT|")) {
+    setupTTNMode();
+    sendTTNText(line.substring(8));
+    return;
+  }
+
   if (line == "GPS|STATUS") {
     emitGpsStatus();
     return;
@@ -566,24 +790,27 @@ void setup() {
     emitLine("STATUS|OK|Bluetooth|" + String(BT_NAME) + "|PIN|1234");
   }
 
-  // LoRa
+  // LoRa / LoRaWAN mode selection
   SPI.begin(PIN_LORA_SCK, PIN_LORA_MISO, PIN_LORA_MOSI, PIN_LORA_SS);
-  LoRa.setPins(PIN_LORA_SS, PIN_LORA_RST, PIN_LORA_DIO0);
 
-  if (!LoRa.begin(LORA_FREQUENCY)) {
-    emitLine("STATUS|ERROR|LoRa init failed");
-    while (true) {
-      delay(1000);
+  if (currentMode == DeviceMode::BLACKOUT) {
+    LoRa.setPins(PIN_LORA_SS, PIN_LORA_RST, PIN_LORA_DIO0);
+
+    if (!LoRa.begin(LORA_FREQUENCY)) {
+      emitLine("STATUS|ERROR|LoRa init failed");
+      while (true) {
+        delay(1000);
+      }
     }
-  }
 
-  LoRa.setSyncWord(0x34);
-  LoRa.setSpreadingFactor(7);
-  LoRa.setSignalBandwidth(125E3);
-  LoRa.setCodingRate4(5);
-  LoRa.setTxPower(17);
-  LoRa.enableCrc();
-  LoRa.receive();
+    LoRa.setSyncWord(0x34);
+    LoRa.setSpreadingFactor(7);
+    LoRa.setSignalBandwidth(125E3);
+    LoRa.setCodingRate4(5);
+    LoRa.setTxPower(17);
+    LoRa.enableCrc();
+    LoRa.receive();
+  }
 
   emitLine("STATUS|OK|Device " + String(DEVICE_ID) + " ready");
 }
@@ -591,28 +818,38 @@ void setup() {
 void loop() {
   const uint32_t now = millis();
 
-  while (GPSSerial.available()) {
-    gps.encode((char)GPSSerial.read());
-  }
+  if (currentMode == DeviceMode::TTN) {
+    os_runloop_once();
+    if (ttnReady && !ttnJoined && now - lastGpsStatusMs >= 15000UL) {
+      ttnJoinIfNeeded();
+    }
+  } else {
+    while (GPSSerial.available()) {
+      gps.encode((char)GPSSerial.read());
+    }
 
-  if (now - lastGpsStatusMs >= GPS_STATUS_INTERVAL_MS) {
-    lastGpsStatusMs = now;
-    emitGpsStatus();
-  }
+    if (now - lastGpsStatusMs >= GPS_STATUS_INTERVAL_MS) {
+      lastGpsStatusMs = now;
+      emitGpsStatus();
+    }
 
-  if (now - lastLocSendMs >= LOC_SEND_INTERVAL_MS) {
-    lastLocSendMs = now;
-    sendLocationBroadcast();
-  }
+    if (now - lastLocSendMs >= LOC_SEND_INTERVAL_MS) {
+      lastLocSendMs = now;
+      sendLocationBroadcast();
+    }
 
-  if (now - lastDisplayUpdateMs >= DISPLAY_UPDATE_INTERVAL_MS) {
-    lastDisplayUpdateMs = now;
-    updateDisplay();
+    if (now - lastDisplayUpdateMs >= DISPLAY_UPDATE_INTERVAL_MS) {
+      lastDisplayUpdateMs = now;
+      updateDisplay();
+    }
+
+    readCommandStream(Serial, usbLine);
+    readCommandStream(SerialBT, btLine);
+    handleIncomingLoRa();
   }
 
   readCommandStream(Serial, usbLine);
   readCommandStream(SerialBT, btLine);
-  handleIncomingLoRa();
 }
 
 #pragma endregion

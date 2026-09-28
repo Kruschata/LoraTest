@@ -2,17 +2,21 @@
 
 ## Ziel
 
-Ziel ist ein robustes, serverloses Zwei-Geraete-Setup:
+Ziel ist ein robustes Zwei-Geraete-Setup mit optionalem TTN-Zugang:
 
 1. Smartphone <-> ESP32/T-Beam ueber Bluetooth Classic (SPP)
-2. ESP32/T-Beam <-> ESP32/T-Beam ausschliesslich ueber LoRa
+2. ESP32/T-Beam <-> ESP32/T-Beam ueber LoRa im Blackout-Modus
+3. ESP32/T-Beam -> TTN ueber LoRaWAN im Non-Blackout-Modus
 
-Es gibt keinen WebSocket-, HTTP- oder Cloud-Pfad im aktuellen Scope.
+Es gibt keinen eigenen WebSocket- oder HTTP-Backendpfad. TTN wird direkt durch
+die ESP-Firmware per LoRaWAN/OTAA angesprochen.
 
 ## Aktueller Ist-Stand
 
-- Flutter-App bietet nur Bluetooth-Verbindung zum gekoppelten LoRaChat-Knoten.
-- ESP-Firmware verarbeitet `CHAT|...`-Kommandos und sendet/empfaengt LoRa-Payloads.
+- Flutter-App verbindet sich zuerst per Bluetooth mit einem gekoppelten
+  BlackoutBuddy-Knoten und bietet danach Blackout- oder TTN-Modus an.
+- ESP-Firmware verarbeitet `CHAT|...`-Kommandos im Blackout-Modus und
+  `MODE|TTN`/`TTN|SEND|...` fuer TTN-LoRaWAN.
 - LoRa-Status und Nachrichten werden als `TX|...`, `RX|...`, `STATUS|...` an die App zurueckgegeben.
 - Escaping fuer `|` und `\\` ist in der Firmware vorhanden.
 

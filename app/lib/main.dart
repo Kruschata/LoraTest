@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/connection_mode_screen.dart';
+import 'screens/blackoutMode_connection_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -16,7 +16,7 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.deepPurple,
         useMaterial3: true,
       ),
-      home: const ConnectionModeScreen(),
+      home: const BluetoothConnectionScreen(),
     );
   }
 }

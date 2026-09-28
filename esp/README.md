@@ -1,11 +1,14 @@
 # BlackoutBuddy ESP Firmware
 
 Firmware für einen LilyGO T-Beam mit ESP32 und SX1276/SX1278. Das Handy
-verbindet sich per Bluetooth Classic (SPP) mit einem Knoten; die Knoten
-kommunizieren untereinander über LoRa.
+verbindet sich per Bluetooth Classic (SPP) mit einem Knoten. Danach wählt die
+App den Betriebsmodus:
 
-Die Firmware enthält keinen WLAN-, HTTP- oder WebSocket-Modus. Der einzige
-Funkpfad zwischen Knoten ist LoRa.
+- Blackout: Knoten kommunizieren direkt untereinander über LoRa.
+- Non-Blackout: Der Knoten verbindet sich per LoRaWAN/OTAA mit The Things
+	Network (TTN); die App kann Uplinks senden und Downlinks anzeigen.
+
+Es gibt keinen eigenen WLAN-, HTTP- oder WebSocket-Backendpfad.
 
 ## Vor dem Flashen
 
@@ -67,12 +70,25 @@ pio run -e t-beam -t upload
 pio device monitor -e t-beam
 ```
 
-Danach den Knoten in Android als `LoRaChat-*` koppeln und ihn in der App im
-Bluetooth-Modus auswählen.
+Danach den Knoten in Android als `BlackoutBuddy-*` koppeln. Die App verbindet
+sich zuerst mit diesem Gerät und zeigt anschließend die Modusauswahl.
+
+## TTN Non-Blackout-Modus
+
+Die Firmware verwendet OTAA. Vor dem Flashen müssen `APPEUI`, `DEVEUI` und
+`APPKEY` in `src/main.cpp` zu einem TTN-Device passen. TTN-Anwendung und
+Firmware müssen dieselbe regionale Frequenzkonfiguration verwenden. Der
+TTN-Modus wird nach der Bluetooth-Verbindung in der App ausgewählt; die App
+sendet dann `MODE|TTN` an den Knoten.
+
+Die TTN-Ansicht zeigt den Join-Status und erlaubt Text-Uplinks bis 50 Zeichen.
+Die Firmware sendet diese als unbestätigte LoRaWAN-Uplinks auf FPort 1 und
+zeigt empfangene Downlinks an. Erst `TTN|JOINED` bestätigt, dass der Knoten dem
+TTN-Netz beigetreten ist.
 
 ## Protokoll
 
-Die App sendet eine Zeile `CHAT|Text`. Der ESP bestätigt lokal mit
+Im Blackout-Modus sendet die App eine Zeile `CHAT|Text`. Der ESP bestätigt lokal mit
 `TX|id|counter|Text` und meldet LoRa-Empfang als
 `RX|sender|counter|rssi|snr|Text`. Pipes und Backslashes im Text werden von
 der Firmware escaped, damit das Protokoll eindeutig bleibt.
