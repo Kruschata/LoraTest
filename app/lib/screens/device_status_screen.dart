@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../services/node_registry_service.dart';
 
 class DeviceStatusScreen extends StatefulWidget {
-  const DeviceStatusScreen({super.key});
+  final bool blackoutMode;
+
+  const DeviceStatusScreen({super.key, this.blackoutMode = false});
 
   @override
   State<DeviceStatusScreen> createState() => _DeviceStatusScreenState();
@@ -17,7 +19,9 @@ class _DeviceStatusScreenState extends State<DeviceStatusScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('LilyGO Device Status'),
-        backgroundColor: Colors.indigo,
+        backgroundColor:
+            widget.blackoutMode ? const Color(0xFF0B1F3A) : Colors.indigo,
+        foregroundColor: widget.blackoutMode ? Colors.white : null,
       ),
       body: AnimatedBuilder(
         animation: _nodeRegistry.nodesListenable,

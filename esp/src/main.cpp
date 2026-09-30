@@ -104,7 +104,7 @@ const lmic_pinmap lmic_pins = {
   .nss = 18,
   .rxtx = LMIC_UNUSED_PIN,
   .rst = 23,
-  .dio = { 26, 35, 34 }
+  .dio = { 26, 33, 32 }
 };
 
 void os_getArtEui(u1_t *buf) {

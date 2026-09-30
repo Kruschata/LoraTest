@@ -5,7 +5,9 @@ import 'package:latlong2/latlong.dart';
 import '../services/node_registry_service.dart';
 
 class DeviceMapScreen extends StatefulWidget {
-  const DeviceMapScreen({super.key});
+  final bool blackoutMode;
+
+  const DeviceMapScreen({super.key, this.blackoutMode = false});
 
   @override
   State<DeviceMapScreen> createState() => _DeviceMapScreenState();
@@ -20,7 +22,9 @@ class _DeviceMapScreenState extends State<DeviceMapScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('LilyGO Map'),
-        backgroundColor: Colors.indigo,
+        backgroundColor:
+            widget.blackoutMode ? const Color(0xFF0B1F3A) : Colors.indigo,
+        foregroundColor: widget.blackoutMode ? Colors.white : null,
       ),
       body: AnimatedBuilder(
         animation: _nodeRegistry.nodesListenable,

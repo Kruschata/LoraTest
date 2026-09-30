@@ -272,7 +272,7 @@ class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Bluetooth: ${widget.deviceName}'),
-        backgroundColor: Colors.deepOrange,
+        backgroundColor: const Color(0xFF0B1F3A),
         foregroundColor: Colors.white,
         actions: [
           Stack(
@@ -326,7 +326,9 @@ class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const DeviceStatusScreen(),
+                  builder: (context) => const DeviceStatusScreen(
+                    blackoutMode: true,
+                  ),
                 ),
               );
             },
@@ -338,7 +340,9 @@ class _BluetoothChatScreenState extends State<BluetoothChatScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const DeviceMapScreen(),
+                  builder: (context) => const DeviceMapScreen(
+                    blackoutMode: true,
+                  ),
                 ),
               );
             },
