@@ -1,45 +1,76 @@
-# BlackoutBuddy Flutter App
+# BlackoutBuddy
 
-Android-App für den direkten Chat über Bluetooth Classic (SPP) mit einem
-LilyGO T-Beam/ESP32. Der ESP leitet die Nachrichten danach per LoRa an andere
-Knoten weiter. Diese App enthält nur den Bluetooth-Modus; ein Server- oder
-WebSocket-Modus ist nicht Bestandteil der aktuellen Implementierung.
+Diese Flutter-App ist für das aktuelle Projekt auf Android und Web optimiert. Sie dient als Frontend für eine lokale Kommunikationslösung mit Bluetooth-basierter Geräteverbindung und LoRa-gestützter Knotenkommunikation.
 
-## Starten
+## Aktueller Projektstatus
 
-Voraussetzungen: Flutter SDK mit Android SDK und ein echtes Android-Gerät.
-`flutter_bluetooth_serial_plus` unterstützt kein iOS. Koppel den ESP vorher in den
-Android-Bluetooth-Einstellungen; sein Name lautet `LoRaChat-*`. Der PIN ist
-`1234`; nach einem Firmware-Update den bisherigen Eintrag bei Bedarf entfernen
-und erneut koppeln.
+- Unterstützte Plattformen: Android, Web
+
+## Zielsetzung
+
+- Geräte im lokalen Netzwerk bzw. über gekoppelte Bluetooth-Geräte erkennen
+- Nachrichten an LoRa-fähige Knoten senden und empfangen
+- Kommunikationslogik im lokalen Umfeld ohne zentrale Server-Infrastruktur betreiben
+
+## Voraussetzungen
+
+- Flutter SDK 3.x
+- Android Studio mit Android SDK
+- Android-Gerät mit Bluetooth Classic-Unterstützung
+
+## Setup
 
 ```powershell
+cd app
 flutter pub get
-# Dieses Repository enthält keine generierte Android-Plattform:
-flutter create --platforms=android .
-flutter run
 ```
 
-Erlaube beim ersten Start die Bluetooth-Berechtigungen. Die nötigen
-Berechtigungen für Android 12+ sind bereits in
-`android/app/src/main/AndroidManifest.xml` hinterlegt.
+Wenn die Plattformen noch nicht existieren oder nach einer Neuinitialisierung eingerichtet werden müssen:
 
-```xml
-<uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
-<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-<uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
-<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+```powershell
+flutter create --platforms=android,web .
 ```
 
-Die App zeigt gekoppelte `LoRaChat-*`-Geräte, sendet `CHAT|<Text>` per
-Bluetooth-Serial an den ESP und verarbeitet dessen `TX`-, `RX`- und
-`STATUS`-Zeilen vollständig, auch wenn sie in mehreren Bluetooth-Paketen
-ankommen.
+## App starten
+
+Android:
+
+```powershell
+flutter run -d android
+```
+
+Web:
+
+```powershell
+flutter run -d chrome
+```
+
+## Build
+
+Android APK:
+
+```powershell
+flutter build apk
+```
+
+Web Build:
+
+```powershell
+flutter build web
+```
+
+## Bluetooth/Hardware-Umgebung
+
+Die App erwartet eine direkte Bluetooth-Verbindung zu einem kompatiblen Gerät, z. B. einem ESP32/LilyGO-basierenden Knoten im Format `LoRaChat-*`. Bei der Einrichtung kann ein PIN wie `1234` erforderlich sein. Die benötigten Android-Berechtigungen für Bluetooth sind in der Android-Manifest-Datei hinterlegt.
 
 ## Kommunikationspfad
 
-1. App -> ESP: Bluetooth Classic (SPP)
-2. ESP -> ESP: LoRa
+1. App -> Gerät per Bluetooth Classic (SPP)
+2. Gerät -> andere Knoten per LoRa
+3. lokale Kommunikation ohne zentralen Server
 
-Damit können zwei Knoten ohne Internet und ohne zentralen Server chatten,
-solange beide Knoten mit identischen LoRa-Parametern geflasht sind.
+Damit können Nachrichten im dezentralen Netzwerk übertragen werden, solange die beteiligten Geräte kompatibel konfiguriert sind.
+
+## Hinweis
+
+Dieses README beschreibt den aktuellen, vereinfachten Projektstand. 

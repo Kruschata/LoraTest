@@ -1,66 +1,174 @@
 # BlackoutBuddy ESP Firmware
 
-Firmware für einen LilyGO T-Beam mit ESP32 und SX1276/SX1278. Das Handy
-verbindet sich per Bluetooth Classic (SPP) mit einem Knoten. Danach wählt die
-App den Betriebsmodus:
+Diese Firmware läuft auf einem ESP32-T-Beam und bildet die Hardware- und Kommunikationsschicht für BlackoutBuddy. Der Smartphone verbindet sich per Bluetooth Classic (SPP) mit dem Knoten; danach kann die App zwischen zwei Betriebsmodi wählen:
 
-- Blackout: Knoten kommunizieren direkt untereinander über LoRa.
-- Non-Blackout: Der Knoten verbindet sich per LoRaWAN/OTAA mit The Things
-	Network (TTN); die App kann Uplinks senden und Downlinks anzeigen.
+- Blackout: direkte Knoten-zu-Knoten-Kommunikation über LoRa
+- TTN / Non-Blackout: LoRaWAN-OTAA-Join mit The Things Network (TTN)
 
-Es gibt keinen eigenen WLAN-, HTTP- oder WebSocket-Backendpfad.
+Es gibt keinen eigenen WLAN-, HTTP- oder WebSocket-Backendpfad. Die TTN-Kommunikation läuft direkt in der Firmware.
 
-## Vor dem Flashen
+---
 
-In `src/main.cpp` jedem Knoten eine eindeutige ID geben. Der Bluetooth-Name
-wird automatisch aus der ID gebildet:
+## Hardware- und Plattformstatus
+
+### Unterstütztes Board
+
+- LilyGO T-Beam mit ESP32
+- LoRa-Modul SX1276/SX1278
+- OLED-Display über I2C
+- GPS-Modul mit Power-Steuerung
+
+### Wichtiges in `src/main.cpp`
+
+Jeder Knoten hat eine eindeutige `DEVICE_ID`, die auch als Teil des Bluetooth-Namens genutzt wird:
 
 ```cpp
 static const uint8_t DEVICE_ID = 1;
-// Bluetooth-Name: BlackoutBuddy-1
+static const char *BT_NAME_BASE = "BlackoutBuddy";
+static String BT_NAME = String(BT_NAME_BASE) + "-" + String(DEVICE_ID);
 ```
 
-Alle Knoten müssen dieselbe LoRa-Frequenz und dieselben LoRa-Parameter
-verwenden. `868E6` ist passend für EU-868, `915E6` für US-915 und `433E6` für
-433-MHz-Module. Vor dem Senden immer eine passende Antenne anschließen.
+Damit ergeben sich Namen wie:
 
-Die verwendeten Pins sind SCK 5, MISO 19, MOSI 27, NSS 18, RST 23 und DIO0 26.
+- `BlackoutBuddy-1`
+- `BlackoutBuddy-2`
 
-## GPS fuer Kartenposition
+Diese IDs müssen für jedes Gerät eindeutig sein.
 
-Fuer die Kartenposition sendet die Firmware `LOC`-Zeilen an die App. Auf vielen
-T-Beam-Boards muss das GPS-Modul aktiv eingeschaltet werden. Die Firmware setzt
-deshalb beim Start den GPS-Power-Pin auf HIGH.
+---
 
-Aktueller GPS-UART in `src/main.cpp`:
+## LoRa-Konfiguration
+
+Die Firmware verwendet feste gemeinsame LoRa-Parameter für die Blackout-Kommunikation. Alle Knoten im selben Test-Setup sollten dieselbe Konfiguration nutzen:
+
+- Frequenz: `868E6` (EU-868) bzw. passend zur Region
+- Pins:
+  - SCK = 5
+  - MISO = 19
+  - MOSI = 27
+  - NSS = 18
+  - RST = 23
+  - DIO0 = 26
+
+Der Betrieb mit Antenne ist zwingend erforderlich. Ohne passende Antenne oder mit inkonsistenter Frequenzkonfiguration ist ein stabiler LoRa-Link nicht garantiert.
+
+---
+
+## Moduslogik
+
+Die Firmware definiert zwei Modi:
+
+```cpp
+enum class DeviceMode {
+  BLACKOUT,
+  TTN
+};
+```
+
+- `BLACKOUT`: LoRa-Knotenkommunikation, ohne Internet
+- `TTN`: OTAA-Join zu TTN und Text-Downlink/Uplink-Handling
+
+Die App schickt dafür Befehle wie:
+
+- `MODE|BLACKOUT`
+- `MODE|TTN`
+
+---
+
+## Blackout-Modus
+
+Im Blackout-Modus verarbeitet die Firmware Befehle im Format:
+
+- `CHAT|Text`
+
+Die Firmware verschickt lokale Bestätigungen und LoRa-Empfangsereignisse in Form von Zeilen wie:
+
+- `TX|id|counter|Text`
+- `RX|sender|counter|rssi|snr|Text`
+- `STATUS|...`
+
+Pipes und Backslashes im Text werden im Protokoll entsprechend escaped, damit die Zeilen eindeutig und robust parsbar bleiben.
+
+### Blackout-Pflichtanforderungen
+
+Für ein Zwei-Geräte-Setup müssen die Knoten:
+
+- unterschiedliche `DEVICE_ID`-Werte haben
+- denselben LoRa-Frequenzbereich und dieselben LoRa-Parameter teilen
+- direkt per Bluetooth gekuppelt werden
+- ebenfalls im selben gemeinsamen LoRa-Setup betrieben werden
+
+---
+
+## TTN / Non-Blackout-Modus
+
+Die Firmware enthält einen TTN-Stack mit OTAA.
+
+### Konfiguration
+
+Vor dem Flashen müssen die Keys passend zur TTN-Anwendung gesetzt werden:
+
+```cpp
+static const u1_t APPEUI[8] PROGMEM = { ... };
+static const u1_t DEVEUI[8] PROGMEM = { ... };
+static const u1_t APPKEY[16] PROGMEM = { ... };
+```
+
+Die TTN-Konfiguration muss mit der regionalen Frequenz und der Device-Registrierung im TTN-Backend übereinstimmen.
+
+### Verhalten
+
+- App sendet `MODE|TTN`
+- Firmware initialisiert LMIC und versucht OTAA-Join
+- `TTN|JOINING` und `TTN|JOINED` werden als Statuszeilen ausgegeben
+- Text-Uplinks bis 50 Zeichen werden per `TTN|SEND|...` gesendet
+- Downlinks werden als `TTN|DOWNLINK|...` zurück an die App gemeldet
+
+Die Firmware meldet auch allgemeinere Statuslinien wie:
+
+- `TTN|READY`
+- `TTN|JOINING`
+- `TTN|JOINED`
+- `TTN|TX_COMPLETE`
+- `TTN|ACK`
+
+---
+
+## GPS für Kartenpositionen
+
+Die Firmware setzt das GPS-Power-Pin beim Start aktiv und verwendet das GPS-Modul für Positionen.
+
+### GPS-Pins
 
 - RX: GPIO 34
 - TX: GPIO 12
+- Power: GPIO 4
 - Baud: 9600
 
-Falls dein Board eine andere GPS-Verdrahtung hat, muessen diese Pins angepasst
-werden.
-
-### Diagnostik
-
-Im Monitor erscheinen regelmaessig Statuszeilen:
+### Typische GPS-Statuszeilen
 
 - `STATUS|GPS|NO_DATA|check_power_or_pins`
 - `STATUS|GPS|NO_FIX|...`
 - `STATUS|GPS|FIX|lat|...|lon|...`
 
-Nur bei `FIX` werden nutzbare Positionen gesendet. Ohne Fix bleibt die
-Kartenansicht in der App leer.
+Nur bei einem gültigen Fix werden Positionsdaten weiterverarbeitet.
 
-Du kannst die GPS-Diagnose aktiv triggern (USB oder Bluetooth):
+### GPS-Kommandos
 
-- `GPS|STATUS` -> sofortige GPS-Statuszeile
+Über USB oder Bluetooth können zusätzlich folgende Befehle verwendet werden:
+
+- `GPS|STATUS` -> sofortige Statusausgabe
 - `GPS|POWERON` -> GPS-Power erneut aktivieren
 
-Die LOC-Zeit nutzt UTC im ISO-Format:
+Positionen werden als:
+
+- `LOC|nodeId|lat|lon|accuracy|timestamp`
+
+gesendet. Das Zeitformat ist UTC im ISO-Format:
 
 - `YYYY-MM-DDTHH:MM:SSZ`
-- Beispiel: `2026-07-30T14:23:05Z`
+
+---
 
 ## Build und Upload
 
@@ -70,30 +178,27 @@ pio run -e t-beam -t upload
 pio device monitor -e t-beam
 ```
 
-Danach den Knoten in Android als `BlackoutBuddy-*` koppeln. Die App verbindet
-sich zuerst mit diesem Gerät und zeigt anschließend die Modusauswahl.
+Danach kann der Knoten in Android als `BlackoutBuddy-*` gekoppelt werden. Die App verbindet sich mit dem Gerät und zeigt anschließend die Modusauswahl.
 
-## TTN Non-Blackout-Modus
+---
 
-Die Firmware verwendet OTAA. Vor dem Flashen müssen `APPEUI`, `DEVEUI` und
-`APPKEY` in `src/main.cpp` zu einem TTN-Device passen. TTN-Anwendung und
-Firmware müssen dieselbe regionale Frequenzkonfiguration verwenden. Der
-TTN-Modus wird nach der Bluetooth-Verbindung in der App ausgewählt; die App
-sendet dann `MODE|TTN` an den Knoten.
+## Wichtige Hinweise für den Betrieb
 
-Die TTN-Ansicht zeigt den Join-Status und erlaubt Text-Uplinks bis 50 Zeichen.
-Die Firmware sendet diese als unbestätigte LoRaWAN-Uplinks auf FPort 1 und
-zeigt empfangene Downlinks an. Erst `TTN|JOINED` bestätigt, dass der Knoten dem
-TTN-Netz beigetreten ist.
+- Jeder Knoten muss eine eindeutige `DEVICE_ID` haben.
+- Alle Knoten im Blackout-Setup müssen dieselbe LoRa-Region und dieselben LoRa-Parameter verwenden.
+- Für TTN muss die OTAA-Konfiguration zu dem gewählten Device im TTN-Backend passen.
+- Die Firmware arbeitet ohne zentrales Backend; die App spricht direkt über Bluetooth mit dem ESP32.
 
-## Protokoll
+---
 
-Im Blackout-Modus sendet die App eine Zeile `CHAT|Text`. Der ESP bestätigt lokal mit
-`TX|id|counter|Text` und meldet LoRa-Empfang als
-`RX|sender|counter|rssi|snr|Text`. Pipes und Backslashes im Text werden von
-der Firmware escaped, damit das Protokoll eindeutig bleibt.
+## Projektkontext
 
-Fuer Positionen sendet die Firmware:
+Der aktuelle Firmware-Stack entspricht dem realen Projektstatus:
 
-- `LOC|nodeId|lat|lon|accuracy|timestamp`
+- Bluetooth Classic als primäres Kontrollmedium zur App
+- LoRa als primärer Peer-to-Peer-Transport im Blackout-Modus
+- LoRaWAN/TTN als optionaler Zusatzpfad im Non-Blackout-Modus
+- GPS und Statusausgaben als Zusatzfunktionen für Karten- und Diagnostikansichten
+
+Damit ist die Firmware bereits auf den aktuellen BlackoutBuddy-Implementierungsumfang abgestimmt und nicht mehr nur auf den ursprünglichen Minimal-Plan.
 

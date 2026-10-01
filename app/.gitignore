@@ -10,23 +10,19 @@
 .svn/
 migrate_working_dir/
 
-# IntelliJ related
+# IDE / editor
 *.iml
 *.ipr
 *.iws
 .idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be committed to version control
-.vscode/
+.vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# Flutter/Dart/Pub related
+# Flutter / Dart / Pub
 **/doc/api/
-**/ios/Flutter/.last_build_id
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
@@ -34,49 +30,30 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+**/build/
 
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
-
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-
-# iOS/macOS
-**/ios/**/*.mode1v3
-**/ios/**/*.mode2v3
-**/ios/**/*.moved-aside
-**/ios/**/*.pbxuser
-**/ios/**/*.perspectivev3
-**/ios/**/*sync/
-**/ios/**/.sconsign.dblite
-**/ios/**/.tags*
-**/ios/**/.vagrant/
-**/ios/**/DerivedData/
-**/ios/**/Icon?
-**/ios/**/Icon??
-**/ios/**/Icon???
-**/ios/**/Icon????
-**/ios/**/Icon?????
-**/ios/**/Icon??
-**/ios/**/Icon???
-**/ios/**/Icon????
-**/ios/**/Icon?????
-**/ios/**/Pods/
-**/ios/**/.symlinks/
-**/ios/**/Flutter/Flutter.framework
-**/ios/**/Flutter/Flutter.podspec
-**/ios/**/Flutter/Flutter.xcframework
-**/ios/**/Flutter/GeneratedPluginRegistrant.swift
-**/ios/**/GoogleService-Info.plist
-**/ios/**/NotificationCenter.framework
+# Android
+android/.gradle/
+android/local.properties
+android/key.properties
+android/**/build/
+android/**/GeneratedPluginRegistrant.java
 
 # Web
-lib/generated_plugin_registrant.dart
+web/build/
 
-# Exceptions to above rules.
+# Symbolication / obfuscation
+*.symbols
+*.map.json
+
+# Local secrets and platform-specific generated config
+*.keystore
+*.jks
+*.p12
+*.pem
+
+# Keep project config files tracked when needed
+!.vscode/settings.json
+
+# Exceptions for Flutter tooling
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
